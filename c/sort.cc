@@ -257,7 +257,8 @@ static size_t sort_thread_multiplier = 2;
 static size_t sort_max_chunk_length = 1 << 20;
 static uint8_t sort_max_radix_bits = 12;
 static uint8_t sort_over_radix_bits = 8;
-static int32_t sort_nthreads = 4;
+static size_t sort_nthreads = 4;
+static size_t min_chunk_size = 4096;
 
 void sort_init_options() {
   dt::register_option(
@@ -477,7 +478,7 @@ class SortContext {
     use_order = false;
     descending = false;
 
-    nth = static_cast<size_t>(sort_nthreads);
+    nth = sort_nthreads;
     n = nrows;
     container_o.ensure_size(n * sizeof(int32_t));
     o = static_cast<int32_t*>(container_o.ptr);
@@ -500,7 +501,10 @@ class SortContext {
     groups = arr32_t(groupby.ngroups(), groupby.offsets_r(), false);
     gg.init(nullptr, 0, groupby.ngroups());
     if (!rowindex) {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        /* n_iterations= */ n,
+        /* min_chunk_size */ min_chunk_size,
+        /* nthreads= */ nth,
         [&](size_t i) {
           o[i] = static_cast<int32_t>(i);
         });
@@ -656,13 +660,19 @@ class SortContext {
     uint8_t* xo = x.data<uint8_t>();
 
     if (use_order) {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        /* nrows= */ n,
+        /* min_chunk_size= */ min_chunk_size,
+        /* nthreads= */ nth,
         [=](size_t j) {
           xo[j] = ASC? static_cast<uint8_t>(xi[o[j]] + 191) >> 6
                      : static_cast<uint8_t>(128 - xi[o[j]]) >> 6;
         });
     } else {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        n,
+        min_chunk_size,
+        nth,
         [=](size_t j) {
           // xi[j]+191 should be computed as uint8_t; by default C++ upcasts it
           // to int, which leads to wrong results after shift by 6.
@@ -703,7 +713,10 @@ class SortContext {
     TO* xo = x.data<TO>();
 
     if (use_order) {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        n,
+        min_chunk_size,
+        nth,
         [&](size_t j) {
           TI t = xi[o[j]];
           xo[j] = t == una? 0 :
@@ -711,7 +724,10 @@ class SortContext {
                      : static_cast<TO>(uedge - t + 1);
         });
     } else {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        n,
+        min_chunk_size,
+        nth,
         [&](size_t j) {
           TI t = xi[j];
           xo[j] = t == una? 0 :
@@ -768,7 +784,10 @@ class SortContext {
     constexpr int SHIFT = sizeof(TO) * 8 - 1;
 
     if (use_order) {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        n,
+        min_chunk_size,
+        nth,
         [&](size_t j) {
           TO t = xi[o[j]];
           xo[j] = ((t & EXP) == EXP && (t & SIG) != 0) ? 0 :
@@ -776,7 +795,10 @@ class SortContext {
                      : t ^ (~SBT & ((t>>SHIFT) - 1));
         });
     } else {
-      dt::parallel_for_static(n,
+      dt::parallel_for_static(
+        n,
+        min_chunk_size,
+        nth,
         [&](size_t j) {
           TO t = xi[j];
           xo[j] = ((t & EXP) == EXP && (t & SIG) != 0) ? 0 :
@@ -819,7 +841,7 @@ class SortContext {
         bool len_gt_1 = false;
         dt::parallel_for_static(
           /* n_iterations= */ n,
-          /* chunk_size= */ 1024,
+          /* min_chunk_size= */ 1024,
           [&](size_t j) {
             int32_t k = use_order? o[j] : static_cast<int32_t>(j);
             T offend = offs[k];
@@ -913,7 +935,10 @@ class SortContext {
 
   template<typename T> void _histogram_gather() {
     T* tx = x.data<T>();
-    dt::parallel_for_static(nchunks, 1,
+    dt::parallel_for_static(
+      nchunks,
+      1,
+      /* nthreads= */ nth,
       [&](size_t i) {
         size_t* cnts = histogram + (nradixes * i);
         size_t j0 = i * chunklen;
@@ -1007,7 +1032,10 @@ class SortContext {
       xo = xx.data<TO>();
       mask = static_cast<TI>((1ULL << shift) - 1);
     }
-    dt::parallel_for_static(nchunks,
+    dt::parallel_for_static(
+      nchunks,
+      min_chunk_size,
+      nth,
       [&](size_t i) {
         size_t j0 = i * chunklen;
         size_t j1 = std::min(j0 + chunklen, n);

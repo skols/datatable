@@ -258,7 +258,7 @@ static size_t sort_max_chunk_length = 1 << 20;
 static uint8_t sort_max_radix_bits = 12;
 static uint8_t sort_over_radix_bits = 8;
 static size_t sort_nthreads = 4;
-static size_t min_chunk_size = 4096;
+static size_t sort_min_chunk_size = 4096;
 
 void sort_init_options() {
   dt::register_option(
@@ -320,6 +320,13 @@ void sort_init_options() {
       if (nth <= 0) nth += static_cast<int32_t>(dt::get_hardware_concurrency());
       if (nth <= 0) nth = 1;
       sort_over_radix_bits = static_cast<uint8_t>(nth);
+    }, "");
+
+  dt::register_option(
+    "sort.min_chunk_size",
+    []{ return py::oint(sort_min_chunk_size); },
+    [](py::oobj value) {
+      sort_min_chunk_size = value.to_size_t();
     }, "");
 }
 
@@ -503,7 +510,7 @@ class SortContext {
     if (!rowindex) {
       dt::parallel_for_static(
         /* n_iterations= */ n,
-        /* min_chunk_size */ min_chunk_size,
+        /* min_chunk_size */ sort_min_chunk_size,
         /* nthreads= */ nth,
         [&](size_t i) {
           o[i] = static_cast<int32_t>(i);
@@ -662,7 +669,7 @@ class SortContext {
     if (use_order) {
       dt::parallel_for_static(
         /* nrows= */ n,
-        /* min_chunk_size= */ min_chunk_size,
+        /* min_chunk_size= */ sort_min_chunk_size,
         /* nthreads= */ nth,
         [=](size_t j) {
           xo[j] = ASC? static_cast<uint8_t>(xi[o[j]] + 191) >> 6
@@ -671,7 +678,7 @@ class SortContext {
     } else {
       dt::parallel_for_static(
         n,
-        min_chunk_size,
+        sort_min_chunk_size,
         nth,
         [=](size_t j) {
           // xi[j]+191 should be computed as uint8_t; by default C++ upcasts it
@@ -715,7 +722,7 @@ class SortContext {
     if (use_order) {
       dt::parallel_for_static(
         n,
-        min_chunk_size,
+        sort_min_chunk_size,
         nth,
         [&](size_t j) {
           TI t = xi[o[j]];
@@ -726,7 +733,7 @@ class SortContext {
     } else {
       dt::parallel_for_static(
         n,
-        min_chunk_size,
+        sort_min_chunk_size,
         nth,
         [&](size_t j) {
           TI t = xi[j];
@@ -786,7 +793,7 @@ class SortContext {
     if (use_order) {
       dt::parallel_for_static(
         n,
-        min_chunk_size,
+        sort_min_chunk_size,
         nth,
         [&](size_t j) {
           TO t = xi[o[j]];
@@ -797,7 +804,7 @@ class SortContext {
     } else {
       dt::parallel_for_static(
         n,
-        min_chunk_size,
+        sort_min_chunk_size,
         nth,
         [&](size_t j) {
           TO t = xi[j];
@@ -1034,7 +1041,7 @@ class SortContext {
     }
     dt::parallel_for_static(
       nchunks,
-      min_chunk_size,
+      sort_min_chunk_size,
       nth,
       [&](size_t i) {
         size_t j0 = i * chunklen;

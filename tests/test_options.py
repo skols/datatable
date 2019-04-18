@@ -17,7 +17,7 @@ def test_options_all():
         "nthreads", "core_logger", "sort", "display", "frame", "fread"}
     assert set(dir(dt.options.sort)) == {
         "insert_method_threshold", "thread_multiplier", "max_chunk_length",
-        "max_radix_bits", "over_radix_bits", "nthreads"}
+        "max_radix_bits", "over_radix_bits", "nthreads", "min_chunk_size"}
     assert set(dir(dt.options.display)) == {
         "interactive", "interactive_hint", "use_colors"}
     assert set(dir(dt.options.frame)) == {

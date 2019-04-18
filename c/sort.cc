@@ -942,10 +942,9 @@ class SortContext {
 
   template<typename T> void _histogram_gather() {
     T* tx = x.data<T>();
-    dt::parallel_for_static(
+    dt::parallel_for_dynamic(
       nchunks,
-      1,
-      /* nthreads= */ nth,
+        /* nthreads= */ nth,
       [&](size_t i) {
         size_t* cnts = histogram + (nradixes * i);
         size_t j0 = i * chunklen;
@@ -1039,9 +1038,8 @@ class SortContext {
       xo = xx.data<TO>();
       mask = static_cast<TI>((1ULL << shift) - 1);
     }
-    dt::parallel_for_static(
+    dt::parallel_for_dynamic(
       nchunks,
-      sort_min_chunk_size_per_thread,
       nth,
       [&](size_t i) {
         size_t j0 = i * chunklen;
@@ -1070,9 +1068,8 @@ class SortContext {
     dt::parallel_region(nth,
       [&] {
         bool tlong = false;
-        dt::parallel_for_static(
+        dt::parallel_for_dynamic(
           /* n_iterations= */ nchunks,
-          /* chunk_size= */ 1,
           [&](size_t i) {
             size_t j0 = i * chunklen;
             size_t j1 = std::min(j0 + chunklen, n);

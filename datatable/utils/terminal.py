@@ -16,6 +16,7 @@ __all__ = ("term", "register_onresize")
 _default_palette = {
     "reset": "\x1B[m",
     "bold": "\x1B[1m",
+    "dim": "\x1B[2m",
     "red": "\x1B[31m",
     "green": "\x1B[32m",
     "yellow": "\x1B[33m",
@@ -36,6 +37,8 @@ _default_palette = {
 class Terminal:
 
     def __init__(self):
+        self.jupyter = False
+        self.ipython = False
         if sys.__stdin__ and sys.__stdout__:
             import blessed
             import _locale
@@ -55,24 +58,27 @@ class Terminal:
             for i, ll in enumerate(_lls):
                 _locale.setlocale(i, ll)
 
+            self._allow_unicode = False
             self._enable_keyboard = True
             self._enable_colors = True
             self._enable_terminal_codes = True
             self._encoding = self._blessed_term._encoding
+            enc = self._encoding.upper()
+            if enc == "UTF8" or enc == "UTF-8":
+                self._allow_unicode = True
             self.is_a_tty = sys.__stdin__.isatty() and sys.__stdout__.isatty()
             self._width = 0
             self._height = 0
-            self.jupyter = None
             self._check_ipython()
         else:
             self._enable_keyboard = False
             self._enable_colors = False
             self._enable_terminal_codes = False
             self._encoding = "UTF8"
+            self._allow_unicode = True
             self.is_a_tty = False
             self._width = 80
             self._height = 25
-            self.jupyter = None
 
     @property
     def width(self):
@@ -81,6 +87,10 @@ class Terminal:
     @property
     def height(self):
         return self._height or self._blessed_term.height
+
+    @property
+    def is_utf8(self):
+        return self._allow_unicode
 
     def length(self, x):
         return self._blessed_term.length(x)
@@ -100,13 +110,15 @@ class Terminal:
         # When running inside a Jupyter notebook, IPython and ipykernel will
         # already be preloaded (in sys.modules). We don't want to try to
         # import them, because it adds unnecessary startup delays.
-        if "IPython" in sys.modules and "ipykernel" in sys.modules:
-            IPython = sys.modules["IPython"]
-            ipykernel = sys.modules["ipykernel"]
-            ipy = IPython.get_ipython()
-            if ipy and isinstance(ipy, ipykernel.zmqshell.ZMQInteractiveShell):
+        if "IPython" in sys.modules:
+            ipy = sys.modules["IPython"].get_ipython()
+            ipy_type = str(type(ipy))
+            if "ZMQInteractiveShell" in ipy_type:
                 self._encoding = "UTF8"
-                self.jupyter = ipy
+                self.jupyter = True
+            elif "TerminalInteractiveShell" in ipy_type:
+                self.ipython = True
+
 
     def using_colors(self):
         return self._enable_colors
@@ -119,6 +131,9 @@ class Terminal:
 
     def use_terminal_codes(self, f):
         self._enable_terminal_codes = f
+
+    def set_allow_unicode(self, v):
+        self._allow_unicode = bool(v)
 
     def color(self, color, text):
         if self._enable_colors:
@@ -142,6 +157,24 @@ class Terminal:
         with self._blessed_term.cbreak():
             while True:
                 yield self._blessed_term.inkey(timeout=refresh_rate)
+
+    def initialize_options(self, options):
+        options.register_option(
+            "display.use_colors", True, xtype=bool,
+            onchange=self.use_colors,
+            doc="Whether to use colors when printing various messages into\n"
+                "the console. Turn this off if your terminal is unable to\n"
+                "display ANSI escape sequences, or if the colors make output\n"
+                "not legible.")
+        options.register_option(
+            "display.allow_unicode",
+            self.is_utf8,
+            xtype=bool,
+            onchange=self.set_allow_unicode,
+            doc="If True, datatable will allow unicode characters (encoded as\n"
+                "UTF-8) to be printed into the output.\n"
+                "If False, then unicode characters will either be avoided, or\n"
+                "hex-escaped as necessary.")
 
 
 

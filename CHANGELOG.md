@@ -113,6 +113,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - The interactive mode is no longer improperly turned on in IPython (#1789).
 
+- Fixed issue with mis-aligned frame headers in IPython, caused by IPython
+  inserting `Out[X]:` in front of the rendered Frame display (#1793).
+
+- Improved rendering of Frames in terminals with white background: we no longer
+  use 'bright_white' color for emphasis, only 'bold' (#1793).
+
+- Fixed crash when a new column was created via partial assignment, i.e.
+  `DT[i, "new_col"] = expr` (#1800).
+
+- Fixed memory leaks/crashes when materializing an object column (#1805).
+
 
 ### Changed
 
@@ -151,10 +162,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Thanks to everyone who helped make `datatable` more stable by discovering
   and reporting bugs that were fixed in this release:
 
-  - [Arno Candel][] (#1619, #1730, #1738),
+  - [Arno Candel][] (#1619, #1730, #1738, #1800, #1803),
   - [Antorsae][] (#1639),
-  - [NachiGithub][] (#1789),
+  - [NachiGithub][] (#1789, #1793),
   - [Pasha Stetsenko][] (#1672, #1694, #1695, #1697, #1703, #1705)
+  - [Tom Kraljevic][] (#1805)
 
 
 
@@ -1081,3 +1093,4 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 [olivier]: https://github.com/goldentom42
 [pasha stetsenko]: https://github.com/st-pasha
 [qiang kou]: https://github.com/thirdwing
+[tom kraljevic]: https://github.com/tomkraljevic

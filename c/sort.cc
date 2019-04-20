@@ -143,6 +143,7 @@
 #include "rowindex.h"
 #include "sort.h"
 #include "types.h"
+#include "utils/time_it.h"
 
 //------------------------------------------------------------------------------
 // Helper classes for managing memory
@@ -524,6 +525,7 @@ class SortContext {
 
 
   void start_sort(const Column* col, bool desc) {
+    TimeIt t("start_sort");
     descending = desc;
     if (desc) {
       _prepare_data_for_column<false>(col);
@@ -545,6 +547,7 @@ class SortContext {
 
 
   void continue_sort(const Column* col, bool desc, bool make_groups) {
+    TimeIt t("continue_sort");
     nradixes = gg.size();
     descending = desc;
     xassert(nradixes > 0);
@@ -580,6 +583,7 @@ class SortContext {
   }
 
   Groupby extract_groups() {
+    TimeIt t("extract_groups");
     size_t ng = gg.size();
     xassert(groups.size() > ng);
     groups.resize(ng + 1);
@@ -587,6 +591,7 @@ class SortContext {
   }
 
   Groupby copy_groups() {
+    TimeIt t("copy_groups");
     size_t ng = gg.size();
     xassert(groups.size() > ng);
     size_t memsize = (ng + 1) * sizeof(int32_t);
@@ -1182,6 +1187,7 @@ class SortContext {
    */
   template <bool make_groups>
   void _radix_recurse(radix_range* rrmap) {
+    TimeIt t("_radix_recurse");
     // Save some of the variables in SortContext that we will be modifying
     // in order to perform the recursion.
     size_t   _n        = n;
@@ -1397,6 +1403,7 @@ using RiGb = std::pair<RowIndex, Groupby>;
 
 RiGb DataTable::group(const std::vector<sort_spec>& spec, bool as_view) const
 {
+  TimeIt t("DataTable::group");
   RiGb result;
   size_t n = spec.size();
   xassert(n > 0);
@@ -1451,6 +1458,7 @@ RiGb DataTable::group(const std::vector<sort_spec>& spec, bool as_view) const
 
 
 static RowIndex sort_tiny(const Column* col, Groupby* out_grps) {
+  TimeIt t("RowIndex sort_tiny");
   if (col->nrows == 0) {
     if (out_grps) *out_grps = Groupby::single_group(0);
     return RowIndex(arr32_t(0), true);
@@ -1466,6 +1474,7 @@ static RowIndex sort_tiny(const Column* col, Groupby* out_grps) {
 
 
 RowIndex Column::sort(Groupby* out_grps) const {
+  TimeIt t("Column::sort");
   if (nrows <= 1) {
     return sort_tiny(this, out_grps);
   }
@@ -1484,6 +1493,7 @@ RowIndex Column::sort(Groupby* out_grps) const {
 RowIndex Column::sort_grouped(const RowIndex& rowindex,
                               const Groupby& grps) const
 {
+  TimeIt t("Column::sort_grouped");
   SortContext sc(nrows, rowindex, grps, /* make_groups = */ false);
   sc.continue_sort(this, /* desc = */ false, /* make_groups = */ false);
   return sc.get_result_rowindex();
@@ -1517,6 +1527,7 @@ remains unmodified.
 )");
 
 py::oobj py::Frame::sort(const PKArgs& args) {
+  TimeIt t("py::Frame::sort");
   dt::workframe wf(dt);
 
   if (args.num_vararg_args() == 0) {

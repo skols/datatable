@@ -1227,6 +1227,7 @@ class SortContext {
 
     strstart = _strstart + 1;
 
+    TimeIt* t2 = new TimeIt("_radix_recurse for (size_t rri = 0; rri < _nradixes; ++rri)");
     for (size_t rri = 0; rri < _nradixes; ++rri) {
       size_t sz = rrmap[rri].size;
       if (sz > rrlarge) {
@@ -1249,6 +1250,7 @@ class SortContext {
         if (sz > size0) size0 = sz;
       }
     }
+    delete t2;
 
     n = _n;
     x = _x;
@@ -1279,6 +1281,7 @@ class SortContext {
 
     dt::parallel_region(nthreads,
       [&] {
+        TimeIt t1("_radix_recurse dt::parallel_region");
         size_t tnum = dt::this_thread_index();
         int32_t* oo = tmp + tnum * size0;
         GroupGatherer tgg;

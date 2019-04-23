@@ -36,7 +36,11 @@ class TimeIt {
     ~TimeIt() {
       clock::time_point t1 = clock::now();
       int64_t ms_duration = std::chrono::duration_cast<ms>(t1 - t0).count();
-      printf("%s: %.3f [ms]\n", message.c_str(), ms_duration / time_factor);
+      printf("Thread %zu [%s] %.3f [ms]\n",
+             dt::this_thread_index(),
+             message.c_str(),
+             ms_duration / time_factor
+            );
     }
 
   private:

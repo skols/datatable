@@ -853,9 +853,9 @@ class SortContext {
       /* nthreads= */ nth,
       [&] {
         bool len_gt_1 = false;
-        dt::parallel_for_dynamic(
+        dt::parallel_for_static(
           /* n_iterations= */ n,
-          // /* min_chunk_size= */ 1024,
+          /* min_chunk_size= */ 1024,
           [&](size_t j) {
             int32_t k = use_order? o[j] : static_cast<int32_t>(j);
             T offend = offs[k];

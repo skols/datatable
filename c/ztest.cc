@@ -78,6 +78,15 @@ static void test_parallel_for_ordered(const PKArgs& args) {
 }
 
 
+static PKArgs arg_benchmark_parallel_for_static(
+  0, 2, 0, false, false, {"n", "nthreads"}, "benchmark_parallel_for_static");
+
+static void benchmark_parallel_for_static(const PKArgs& args) {
+  size_t n = args[0].to_size_t();
+  size_t nthreads = args[1].to_size_t();
+  dttest::benchmark_parallel_for_static(n, nthreads);
+}
+
 
 void DatatableModule::init_tests() {
   ADD_FN(&test_coverage, arg_test_coverage);
@@ -87,6 +96,8 @@ void DatatableModule::init_tests() {
   ADD_FN(&test_parallel_for_static, arg_test_parallel_for_static);
   ADD_FN(&test_parallel_for_dynamic, arg_test_parallel_for_dynamic);
   ADD_FN(&test_parallel_for_ordered, arg_test_parallel_for_ordered);
+
+  ADD_FN(&benchmark_parallel_for_static, arg_benchmark_parallel_for_static);
 }
 
 

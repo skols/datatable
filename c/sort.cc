@@ -144,6 +144,7 @@
 #include "sort.h"
 #include "types.h"
 #include "utils/time_it.h"
+#include <omp.h>
 
 //------------------------------------------------------------------------------
 // Helper classes for managing memory
@@ -525,7 +526,7 @@ class SortContext {
 
 
   void start_sort(const Column* col, bool desc) {
-    TimeIt t("start_sort");
+    TimeIt t("start_sort()");
     descending = desc;
     if (desc) {
       _prepare_data_for_column<false>(col);
@@ -547,7 +548,7 @@ class SortContext {
 
 
   void continue_sort(const Column* col, bool desc, bool make_groups) {
-    TimeIt t("continue_sort");
+    TimeIt t("continue_sort()");
     nradixes = gg.size();
     descending = desc;
     xassert(nradixes > 0);
@@ -583,7 +584,7 @@ class SortContext {
   }
 
   Groupby extract_groups() {
-    TimeIt t("extract_groups");
+    TimeIt t("extract_groups()");
     size_t ng = gg.size();
     xassert(groups.size() > ng);
     groups.resize(ng + 1);
@@ -591,7 +592,7 @@ class SortContext {
   }
 
   Groupby copy_groups() {
-    TimeIt t("copy_groups");
+    TimeIt t("copy_groups()");
     size_t ng = gg.size();
     xassert(groups.size() > ng);
     size_t memsize = (ng + 1) * sizeof(int32_t);
@@ -833,6 +834,7 @@ class SortContext {
    */
   template <bool ASC, typename T>
   void _initS(const Column* col) {
+    TimeIt t("_initS()");
     auto scol = static_cast<const StringColumn<T>*>(col);
     strdata = reinterpret_cast<const uint8_t*>(scol->strdata());
     const T* offs = scol->offsets();
@@ -851,9 +853,9 @@ class SortContext {
       /* nthreads= */ nth,
       [&] {
         bool len_gt_1 = false;
-        dt::parallel_for_static(
+        dt::parallel_for_dynamic(
           /* n_iterations= */ n,
-          /* min_chunk_size= */ 1024,
+          // /* min_chunk_size= */ 1024,
           [&](size_t j) {
             int32_t k = use_order? o[j] : static_cast<int32_t>(j);
             T offend = offs[k];
@@ -932,6 +934,7 @@ class SortContext {
    * will contain cumulative counts of values in `x`).
    */
   void build_histogram() {
+    TimeIt t("build_histogram()");
     size_t counts_size = nchunks * nradixes;
     arr_hist.ensuresize(counts_size);
     histogram = arr_hist.data();
@@ -946,10 +949,12 @@ class SortContext {
   }
 
   template<typename T> void _histogram_gather() {
+    TimeIt t("_histogram_gather()");
     T* tx = x.data<T>();
-    dt::parallel_for_dynamic(
+    dt::parallel_for_static(
       nchunks,
-        /* nthreads= */ nth,
+      sort_min_chunk_size_per_thread,
+      /* nthreads= */ nth,
       [&](size_t i) {
         size_t* cnts = histogram + (nradixes * i);
         size_t j0 = i * chunklen;
@@ -961,6 +966,7 @@ class SortContext {
   }
 
   void _histogram_cumulate() {
+    TimeIt tt("_histogram_cumulate()");
     size_t cumsum = 0;
     size_t counts_size = nchunks * nradixes;
     for (size_t j = 0; j < nradixes; ++j) {
@@ -993,6 +999,7 @@ class SortContext {
    * to each radix value.
    */
   void reorder_data() {
+    TimeIt t("reorder_data()");
     if (!xx && next_elemsize) allocate_xx();
     if (!next_o) allocate_oo();
     if (strtype) {
@@ -1036,6 +1043,7 @@ class SortContext {
 
   template<typename TI, typename TO, bool OUT>
   void _reorder_impl() {
+    TimeIt t("_reorder_impl()");
     TI* xi = x.data<TI>();
     TO* xo = nullptr;
     TI mask = 0;
@@ -1043,8 +1051,9 @@ class SortContext {
       xo = xx.data<TO>();
       mask = static_cast<TI>((1ULL << shift) - 1);
     }
-    dt::parallel_for_dynamic(
+    dt::parallel_for_static(
       nchunks,
+      sort_min_chunk_size_per_thread,
       nth,
       [&](size_t i) {
         size_t j0 = i * chunklen;
@@ -1064,17 +1073,20 @@ class SortContext {
 
   template <bool ASC, typename T>
   void _reorder_str() {
+    size_t nthreads = std::min(nth, nchunks);
+    TimeIt t("_reorder_str()-" + std::string(std::to_string(nthreads)));
     uint8_t* xi = x.data<uint8_t>();
     uint8_t* xo = xx.data<uint8_t>();
     const T sstart = static_cast<T>(strstart) + 1;
     const T* soffs = static_cast<const T*>(stroffs);
+
     std::atomic_flag flong = ATOMIC_FLAG_INIT;
 
-    dt::parallel_region(nth,
-      [&] {
+    auto fn = [&] {
         bool tlong = false;
-        dt::parallel_for_dynamic(
+        dt::parallel_for_static(
           /* n_iterations= */ nchunks,
+          /* chunk_size= */ 1,
           [&](size_t i) {
             size_t j0 = i * chunklen;
             size_t j1 = std::min(j0 + chunklen, n);
@@ -1099,7 +1111,12 @@ class SortContext {
             }
           });
         if (tlong) flong.test_and_set();
-      });
+      };
+
+    if (nthreads > 1)
+      dt::parallel_region(nthreads, fn);
+    else
+      fn();
     next_elemsize = flong.test_and_set();
     xassert(histogram[nchunks * nradixes - 1] == n);
   }
@@ -1117,12 +1134,14 @@ class SortContext {
    */
   template <bool make_groups>
   void radix_psort() {
+    TimeIt t("radix_psort()/" + std::to_string(n));
     int32_t* ores = o;
     determine_sorting_parameters();
     build_histogram();
     reorder_data();
 
     if (elemsize) {
+      TimeIt t1("radix_psort()[elemsize]");
       // If after reordering there are still unsorted elements in `x`, then
       // sort them recursively.
       uint8_t _nsigbits = nsigbits;
@@ -1134,6 +1153,7 @@ class SortContext {
       nsigbits = _nsigbits;
     }
     else if (make_groups) {
+      TimeIt t1("radix_psort()[make_groups]");
       // Otherwise groups can be computed directly from the histogram
       gg.from_histogram(histogram, nchunks, nradixes);
     }
@@ -1147,6 +1167,7 @@ class SortContext {
   }
 
   void _fill_rrmap_from_histogram(radix_range* rrmap) {
+    TimeIt t("_fill_rrmap_from_histogram()");
     // First, determine the sizes of ranges corresponding to each radix that
     // remain to be sorted. The previous step left us with the `histogram`
     // array containing cumulative sizes of these ranges, so all we need is
@@ -1162,6 +1183,7 @@ class SortContext {
   }
 
   void _fill_rrmap_from_groups(radix_range* rrmap) {
+    TimeIt t("_fill_rrmap_from_groups()");
     size_t ng = gg.size();
     for (size_t i = 0; i < ng; ++i) {
       rrmap[i].offset = static_cast<size_t>(groups[i]);
@@ -1187,7 +1209,7 @@ class SortContext {
    */
   template <bool make_groups>
   void _radix_recurse(radix_range* rrmap) {
-    TimeIt t("_radix_recurse");
+    TimeIt t("_radix_recurse()");
     // Save some of the variables in SortContext that we will be modifying
     // in order to perform the recursion.
     size_t   _n        = n;
@@ -1227,7 +1249,7 @@ class SortContext {
 
     strstart = _strstart + 1;
 
-    TimeIt* t2 = new TimeIt("_radix_recurse for (size_t rri = 0; rri < _nradixes; ++rri)");
+    TimeIt* t2 = new TimeIt("_radix_recurse[for]");
     for (size_t rri = 0; rri < _nradixes; ++rri) {
       size_t sz = rrmap[rri].size;
       if (sz > rrlarge) {
@@ -1281,7 +1303,7 @@ class SortContext {
 
     dt::parallel_region(nthreads,
       [&] {
-        TimeIt t1("_radix_recurse dt::parallel_region");
+        TimeIt t1("_radix_recurse[dt::parallel_region]");
         size_t tnum = dt::this_thread_index();
         int32_t* oo = tmp + tnum * size0;
         GroupGatherer tgg;
@@ -1406,7 +1428,7 @@ using RiGb = std::pair<RowIndex, Groupby>;
 
 RiGb DataTable::group(const std::vector<sort_spec>& spec, bool as_view) const
 {
-  TimeIt t("DataTable::group");
+  TimeIt t("DataTable::group()");
   RiGb result;
   size_t n = spec.size();
   xassert(n > 0);
@@ -1461,7 +1483,7 @@ RiGb DataTable::group(const std::vector<sort_spec>& spec, bool as_view) const
 
 
 static RowIndex sort_tiny(const Column* col, Groupby* out_grps) {
-  TimeIt t("RowIndex sort_tiny");
+  TimeIt t("sort_tiny()");
   if (col->nrows == 0) {
     if (out_grps) *out_grps = Groupby::single_group(0);
     return RowIndex(arr32_t(0), true);
@@ -1477,7 +1499,7 @@ static RowIndex sort_tiny(const Column* col, Groupby* out_grps) {
 
 
 RowIndex Column::sort(Groupby* out_grps) const {
-  TimeIt t("Column::sort");
+  TimeIt t("Column::sort()");
   if (nrows <= 1) {
     return sort_tiny(this, out_grps);
   }
@@ -1496,7 +1518,7 @@ RowIndex Column::sort(Groupby* out_grps) const {
 RowIndex Column::sort_grouped(const RowIndex& rowindex,
                               const Groupby& grps) const
 {
-  TimeIt t("Column::sort_grouped");
+  TimeIt t("Column::sort_grouped()");
   SortContext sc(nrows, rowindex, grps, /* make_groups = */ false);
   sc.continue_sort(this, /* desc = */ false, /* make_groups = */ false);
   return sc.get_result_rowindex();
@@ -1530,7 +1552,7 @@ remains unmodified.
 )");
 
 py::oobj py::Frame::sort(const PKArgs& args) {
-  TimeIt t("py::Frame::sort");
+  TimeIt t("py::Frame::sort()");
   dt::workframe wf(dt);
 
   if (args.num_vararg_args() == 0) {

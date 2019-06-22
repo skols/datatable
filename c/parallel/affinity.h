@@ -45,7 +45,7 @@
 
 #include "utils/assert.h"
 
-namespace dt {
+// namespace dt {
 
 
 //------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ namespace dt {
 //------------------------------------------------------------------------------
 #if defined(_WIN32)
 
-class Affinity_Win32 {
+class Affinity {
   private:
     typedef ULONG_PTR AffinityMask;
     static const int MaxHWThreads = sizeof(AffinityMask) * 8;
@@ -156,66 +156,63 @@ class Affinity_Win32 {
 #include <mach/thread_policy.h>
 #include <mach/thread_act.h>
 
-class Affinity_Mach {
+class Affinity {
 private:
-    bool m_isAccurate;
-    size_t m_numHWThreads;
-    size_t m_numPhysicalCores;
-    size_t m_hwThreadsPerCore;
+  bool m_isAccurate;
+  size_t m_numHWThreads;
+  size_t m_numPhysicalCores;
+  size_t m_hwThreadsPerCore;
 
 public:
-    Affinity_Mach() : m_isAccurate(false), m_numHWThreads(1), m_numPhysicalCores(1), m_hwThreadsPerCore(1) {
-        int count;
-        // Get # of HW threads
-        size_t countLen = sizeof(count);
-        if (sysctlbyname("hw.logicalcpu", &count, &countLen, nullptr, 0) == 0) {
-            if (count > 0) {
-                m_numHWThreads = static_cast<size_t>(count);
-                // Get # of physical cores
-                countLen = sizeof(count);
-                if (sysctlbyname("hw.physicalcpu", &count, &countLen, nullptr, 0) == 0) {
-                    if (count > 0) {
-                        m_numPhysicalCores = static_cast<size_t>(count);
-                        m_hwThreadsPerCore = m_numHWThreads / static_cast<size_t>(count);
-                        if (m_hwThreadsPerCore < 1)
-                            m_hwThreadsPerCore = 1;
-                        else
-                            m_isAccurate = true;
-                    }
-                }
-            }
+  Affinity() : m_isAccurate(false), m_numHWThreads(1), m_numPhysicalCores(1), m_hwThreadsPerCore(1) {
+    int count;
+    // Get # of HW threads
+    size_t countLen = sizeof(count);
+    if (sysctlbyname("hw.logicalcpu", &count, &countLen, nullptr, 0) == 0) {
+      if (count > 0) {
+        m_numHWThreads = static_cast<size_t>(count);
+        // Get # of physical cores
+        countLen = sizeof(count);
+        if (sysctlbyname("hw.physicalcpu", &count, &countLen, nullptr, 0) == 0) {
+          if (count > 0) {
+            m_numPhysicalCores = static_cast<size_t>(count);
+            m_hwThreadsPerCore = m_numHWThreads / static_cast<size_t>(count);
+            if (m_hwThreadsPerCore < 1) m_hwThreadsPerCore = 1;
+            else m_isAccurate = true;
+          }
         }
+      }
     }
+  }
 
-    bool isAccurate() const {
-        return m_isAccurate;
-    }
+  bool isAccurate() const {
+    return m_isAccurate;
+  }
 
-    size_t getNumPhysicalCores() const {
-        return m_numPhysicalCores;
-    }
+  size_t getNumPhysicalCores() const {
+    return m_numPhysicalCores;
+  }
 
-    size_t getNumHWThreads() const {
-        return m_numHWThreads;
-    }
+  size_t getNumHWThreads() const {
+    return m_numHWThreads;
+  }
 
-    size_t getNumHWThreadsForCore(int core) const {
-        xassert(static_cast<size_t>(core) < m_numPhysicalCores);
-        return m_hwThreadsPerCore;
-    }
+  size_t getNumHWThreadsForCore(int core) const {
+    xassert(static_cast<size_t>(core) < m_numPhysicalCores);
+    return m_hwThreadsPerCore;
+  }
 
-    bool setAffinity(int core, int hwThread) {
-        xassert(static_cast<size_t>(core) < m_numPhysicalCores);
-        xassert(static_cast<size_t>(hwThread) < m_hwThreadsPerCore);
-        size_t index = static_cast<size_t>(core) * m_hwThreadsPerCore + static_cast<size_t>(hwThread);
-        thread_t thread = mach_thread_self();
-        thread_affinity_policy_data_t policyInfo = {static_cast<integer_t>(index)};
-        // Note: The following returns KERN_NOT_SUPPORTED on iOS. (Tested on iOS
-        // 9.2.)
-        kern_return_t result =
-            thread_policy_set(thread, THREAD_AFFINITY_POLICY, reinterpret_cast<thread_policy_t>(&policyInfo), THREAD_AFFINITY_POLICY_COUNT);
-        return (result == KERN_SUCCESS);
-    }
+  bool setAffinity(int core, int hwThread) {
+    xassert(static_cast<size_t>(core) < m_numPhysicalCores);
+    xassert(static_cast<size_t>(hwThread) < m_hwThreadsPerCore);
+    size_t index = static_cast<size_t>(core) * m_hwThreadsPerCore + static_cast<size_t>(hwThread);
+    thread_t thread = mach_thread_self();
+    thread_affinity_policy_data_t policyInfo = {static_cast<integer_t>(index)};
+    // Note: The following returns KERN_NOT_SUPPORTED on iOS. (Tested on iOS
+    // 9.2.)
+    kern_return_t result = thread_policy_set(thread, THREAD_AFFINITY_POLICY, reinterpret_cast<thread_policy_t>(&policyInfo), THREAD_AFFINITY_POLICY_COUNT);
+    return (result == KERN_SUCCESS);
+  }
 };
 
 
@@ -224,7 +221,7 @@ public:
 //------------------------------------------------------------------------------
 #elif defined(__unix__)
 
-class Affinity_Linux {
+class Affinity {
 private:
     struct CoreInfo {
         std::vector<size_t> hwThreadIndexToLogicalProcessor;
@@ -253,7 +250,7 @@ private:
         CoreInfoCollector() : logicalProcessor(-1) {
         }
 
-        void flush(Affinity_Linux& affinity) {
+        void flush(Affinity& affinity) {
             if (logicalProcessor >= 0) {
                 if (coreID.physical < 0 && coreID.core < 0) {
                     // On PowerPC Linux 3.2.0-4, /proc/cpuinfo outputs "processor", but not "physical id" or "core id".
@@ -280,7 +277,7 @@ private:
 
 public:
 
-    Affinity_Linux::Affinity_Linux() : m_isAccurate(false), m_numHWThreads(0) {
+    Affinity::Affinity() : m_isAccurate(false), m_numHWThreads(0) {
         std::ifstream f("/proc/cpuinfo");
         if (f.is_open()) {
             CoreInfoCollector collector;
@@ -329,7 +326,7 @@ public:
         return m_coreIndexToInfo[core].hwThreadIndexToLogicalProcessor.size();
     }
 
-    bool Affinity_Linux::setAffinity(int core, int hwThread) {
+    bool setAffinity(int core, int hwThread) {
         size_t logicalProcessor = m_coreIndexToInfo[core].hwThreadIndexToLogicalProcessor[hwThread];
         cpu_set_t cpuSet;
         CPU_ZERO(&cpuSet);
@@ -346,5 +343,5 @@ public:
 #endif
 
 
-} // namespace dt
+// } // namespace dt
 #endif

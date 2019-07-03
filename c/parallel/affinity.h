@@ -158,13 +158,14 @@ class Affinity {
 
 class Affinity {
 private:
-  bool m_isAccurate;
   size_t m_numHWThreads;
   size_t m_numPhysicalCores;
   size_t m_hwThreadsPerCore;
+  bool m_isAccurate;
+  size_t : 56;
 
 public:
-  Affinity() : m_isAccurate(false), m_numHWThreads(1), m_numPhysicalCores(1), m_hwThreadsPerCore(1) {
+  Affinity() : m_numHWThreads(1), m_numPhysicalCores(1), m_hwThreadsPerCore(1), m_isAccurate(false) {
     int count;
     // Get # of HW threads
     size_t countLen = sizeof(count);
@@ -206,11 +207,14 @@ public:
     xassert(static_cast<size_t>(core) < m_numPhysicalCores);
     xassert(static_cast<size_t>(hwThread) < m_hwThreadsPerCore);
     size_t index = static_cast<size_t>(core) * m_hwThreadsPerCore + static_cast<size_t>(hwThread);
+    index++;
+    printf("index: %zu\n", index);
     thread_t thread = mach_thread_self();
     thread_affinity_policy_data_t policyInfo = {static_cast<integer_t>(index)};
     // Note: The following returns KERN_NOT_SUPPORTED on iOS. (Tested on iOS
     // 9.2.)
     kern_return_t result = thread_policy_set(thread, THREAD_AFFINITY_POLICY, reinterpret_cast<thread_policy_t>(&policyInfo), THREAD_AFFINITY_POLICY_COUNT);
+    // printf("thread: %zu; assigned: %d\n", thread, result == KERN_SUCCESS);
     return (result == KERN_SUCCESS);
   }
 };

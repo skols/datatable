@@ -473,8 +473,24 @@ FtrlFitOutput Ftrl<T>::fit(T(*linkfn)(T), U(*targetfn)(U, size_t), T(*lossfn)(T,
   // If we request more threads than is available, `dt::parallel_region()`
   // will fall back to the possible maximum.
   size_t nthreads = std::max(iteration_nrows / dt::FtrlBase::MIN_ROWS_PER_THREAD, 1lu);
+
+  // Affinity a;
   dt::parallel_region(nthreads,
     [&]() {
+      // printf("std::this_thread::get_id: %zu\n", dt::this_thread_index());
+      // printf("getNumPhysicalCores: %zu\n", a.getNumPhysicalCores());
+      // printf("getNumHWThreads: %zu\n", a.getNumHWThreads());
+      // printf("getNumHWThreadsForCore: %zu\n", a.getNumHWThreadsForCore(0));
+      // printf("isAccurate: %d\n", a.isAccurate());
+      // a.setAffinity(0, 0);
+    }
+  );
+
+
+  Affinity a;
+  dt::parallel_region(nthreads,
+    [&]() {
+      a.setAffinity(dt::this_thread_index() % 4, dt::this_thread_index() / 4);
       // Each thread gets a private storage for hashes,
       // temporary weights and feature importances.
       uint64ptr x = uint64ptr(new uint64_t[nfeatures]);
@@ -482,6 +498,7 @@ FtrlFitOutput Ftrl<T>::fit(T(*linkfn)(T), U(*targetfn)(U, size_t), T(*lossfn)(T,
       tptr<T> fi = tptr<T>(new T[nfeatures]());
 
       for (size_t iter = 0; iter < niterations; ++iter) {
+        // printf("this_thread_index: %zu\n", dt::this_thread_index());
         size_t iteration_start = iter * iteration_nrows;
         iteration_end = (iter == niterations - 1)? total_nrows :
                                                    (iter + 1) * iteration_nrows;

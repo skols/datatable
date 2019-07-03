@@ -19,6 +19,7 @@
 #include <functional>    // std::function
 #include <mutex>         // std::mutex
 #include "utils/function.h"
+#include "parallel/affinity.h"
 namespace dt {
 using std::size_t;
 

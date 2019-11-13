@@ -570,7 +570,9 @@ def get_extra_link_args():
 
         # link zlib compression library
         flags += ["-lz"]
-        flags += ["-L" + sysconfig.get_config_var("LIBDIR")]
+        libdir = sysconfig.get_config_var("LIBDIR")
+        if libdir:
+            flags += ["-L" + sysconfig.get_config_var("LIBDIR")]
 
         for flag in flags:
             log.info(flag)

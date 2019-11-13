@@ -347,8 +347,8 @@ oobj None();
 oobj True();
 oobj False();
 oobj Ellipsis();
-robj stdin();
-robj stdout();
+robj robj_stdin();
+robj robj_stdout();
 robj rnone();
 
 

@@ -439,16 +439,18 @@ def get_default_compile_flags():
 def get_extra_compile_flags():
     flags = []
     with TaskContext("Determine the extra compiler flags") as log:
-        flags += ["-std=c++11"]
+        if !iswindows():
+            flags += ["-std=c++11"]
+            # Generate 'Position-independent code'. This is required for any
+            # dynamically-linked library.
+            flags += ["-fPIC"]
+
         if is_clang():
             flags += ["-stdlib=libc++"]
 
         # Path to source files / Python include files
         flags += ["-Ic"]
 
-        # Generate 'Position-independent code'. This is required for any
-        # dynamically-linked library.
-        flags += ["-fPIC"]
 
         if "DTASAN" in os.environ:
             flags += ["-g3", "-ggdb", "-O0",

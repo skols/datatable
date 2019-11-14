@@ -6,7 +6,6 @@
 // © H2O.ai 2018-2019
 //------------------------------------------------------------------------------
 #include <stdlib.h>             // strtod
-#include <strings.h>            // strcasecmp
 #include <cerrno>               // errno
 #include <cstring>              // std::memcmp
 #include "csv/reader.h"
@@ -272,7 +271,10 @@ void GenericReader::init_nastrings(const py::Arg& arg) {
         throw ValueError() << "NA string \"" << ch << "\" has whitespace or "
                            << "control characters at the beginning or end";
       }
-      if (strcasecmp(ch, "true") == 0 || strcasecmp(ch, "false") == 0) {
+      if (strcmp(ch, "true") == 0 || strcmp(ch, "True") == 0 ||
+          strcmp(ch, "TRUE") == 0 || strcmp(ch, "false") == 0 ||
+          strcmp(ch, "False") == 0 || strcmp(ch, "FALSE") == 0)
+      {
         throw ValueError() << "NA string \"" << ch << "\" looks like a boolean "
                            << "literal, this is not supported";
       }

@@ -7,7 +7,6 @@
 //------------------------------------------------------------------------------
 #include <cstring>           // std::memcpy
 #include <errno.h>           // errno
-#include <unistd.h>          // write
 #include "utils/alloc.h"     // dt::realloc
 #include "utils/assert.h"
 #include "utils/misc.h"
@@ -17,8 +16,10 @@
 
 #if DT_OS_WINDOWS
   #include "lib/mman/mman.h" // mmap, munmap
+  #include <io.h>            // write
 #else
   #include <sys/mman.h>      // mmap, munmap
+  #include <unistd.h>        // write
 #endif
 
 

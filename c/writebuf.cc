@@ -5,16 +5,21 @@
 //
 // © H2O.ai 2018
 //------------------------------------------------------------------------------
-#include <cstring>     // std::memcpy
-#include <errno.h>     // errno
-#include <sys/mman.h>  // mmap
-#include <unistd.h>    // write
-#include "utils/alloc.h"   // dt::realloc
+#include <cstring>           // std::memcpy
+#include <errno.h>           // errno
+#include <unistd.h>          // write
+#include "utils/alloc.h"     // dt::realloc
 #include "utils/assert.h"
 #include "utils/misc.h"
 #include "datatablemodule.h"
 #include "buffer.h"
 #include "writebuf.h"
+
+#if DT_OS_WINDOWS
+  #include "lib/mman/mman.h" // mmap, munmap
+#else
+  #include <sys/mman.h>      // mmap, munmap
+#endif
 
 
 

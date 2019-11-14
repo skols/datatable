@@ -18,9 +18,12 @@
 #include "buffer.h"
 #include "mmm.h"               // MemoryMapWorker, MemoryMapManager
 
-#if !DT_OS_WINDOWS
+#if DT_OS_WINDOWS
+  #include "lib/mman/mman.h"   // mmap, munmap
+#else
   #include <sys/mman.h>        // mmap, munmap
 #endif
+
 
 
 //------------------------------------------------------------------------------

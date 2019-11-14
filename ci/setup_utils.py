@@ -467,13 +467,16 @@ def get_extra_compile_flags():
             flags += ["-DDTTEST", "-DDTDEBUG"]
         else:
             # Optimize at best level, but still include some debug information
-            flags += ["-g2", "-O3"]
+            # TODO: control this for windows
+            if not iswindows():
+                flags += ["-g2", "-O3"]
 
         if "CI_EXTRA_COMPILE_ARGS" in os.environ:
             flags += [os.environ["CI_EXTRA_COMPILE_ARGS"]]
 
         if iswindows():
-            flags += ["/W4"]
+            # TODO: control this for windows
+            #flags += ["/W4"]
         elif is_clang():
             # Ignored warnings:
             #   -Wc++98-compat-pedantic:

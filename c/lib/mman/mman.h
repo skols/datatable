@@ -19,6 +19,8 @@
 #include <windows.h>
 #include <errno.h>
 #include <io.h>
+#undef min
+#undef max
 
 #define PROT_NONE       0
 #define PROT_READ       1

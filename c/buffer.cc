@@ -877,7 +877,7 @@ class Overmap_BufferImpl : public Mmap_BufferImpl {
           impl_->resize(newsize);
         }
       } else {
-        size_t copysize = keep_data? std::min<size_t>(newsize, oldsize) : 0;
+        size_t copysize = keep_data? std::min(newsize, oldsize) : 0;
         materialize(newsize, copysize);
       }
     }

@@ -104,7 +104,7 @@ size_t FileWritableBuffer::prep_write(size_t src_size, const void* src)
   int attempts_remaining = 5;
   size_t written_to_file = 0;
   while (written_to_file < src_size) {
-    size_t bytes_to_write = std::min<size_t>(src_size - written_to_file, CHUNK_SIZE);
+    size_t bytes_to_write = std::min(src_size - written_to_file, CHUNK_SIZE);
     const void* buf = static_cast<const char*>(src) + written_to_file;
     ssize_t r = ::write(fd, buf, bytes_to_write);
     if (r < 0) {

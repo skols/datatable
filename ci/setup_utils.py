@@ -477,6 +477,7 @@ def get_extra_compile_flags():
         if iswindows():
             # TODO: control this for windows
             #flags += ["/W4"]
+            pass
         elif is_clang():
             # Ignored warnings:
             #   -Wc++98-compat-pedantic:

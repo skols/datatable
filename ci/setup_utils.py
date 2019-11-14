@@ -439,7 +439,7 @@ def get_default_compile_flags():
 def get_extra_compile_flags():
     flags = []
     with TaskContext("Determine the extra compiler flags") as log:
-        if !iswindows():
+        if not iswindows():
             flags += ["-std=c++11"]
             # Generate 'Position-independent code'. This is required for any
             # dynamically-linked library.

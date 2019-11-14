@@ -21,6 +21,7 @@
 #include "python/args.h"
 #include "python/obj.h"
 #include "utils/assert.h"
+#include "utils/macros.h"
 namespace py {
 
 
@@ -484,19 +485,13 @@ int _call_setter(void(T::*fn)(const Arg&), Arg& ARG,
 // Helper macros
 //------------------------------------------------------------------------------
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-template"
+template <typename T, typename R, typename... Args>
+T _class_of_impl(R(T::*)(Args...));
 
 template <typename T, typename R, typename... Args>
-static T _class_of_impl(R(T::*)(Args...));
-
-template <typename T, typename R, typename... Args>
-static T _class_of_impl(R(T::*)(Args...) const);
+T _class_of_impl(R(T::*)(Args...) const);
 
 #define CLASS_OF(METH) decltype(_class_of_impl(METH))
-
-#pragma clang diagnostic pop
-
 
 
 #define CONSTRUCTOR(METH, ARGS)                                                \

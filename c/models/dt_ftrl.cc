@@ -829,7 +829,7 @@ dtptr Ftrl<T>::predict(const DataTable* dt_X) {
   }
 
   size_t nthreads = get_nthreads(dt_X->nrows());
-  nthreads = std::min(std::max(nthreads, size_t(1), dt::num_threads_in_pool());
+  nthreads = std::min(std::max(nthreads, size_t(1)), dt::num_threads_in_pool());
   bool k_binomial;
 
   // Set progress reporting

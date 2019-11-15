@@ -14,7 +14,6 @@
 // limitations under the License.
 //------------------------------------------------------------------------------
 #include <thread>      // std::thread::hardware_concurrency
-#include <pthread.h>   // pthread_atfork
 #include "parallel/api.h"
 #include "parallel/thread_pool.h"
 #include "parallel/thread_team.h"
@@ -23,6 +22,12 @@
 #include "python/_all.h"
 #include "utils/assert.h"
 #include "options.h"
+#include "utils/macros.h"
+
+#if !DT_OS_WINDOWS
+  #include <pthread.h>   // pthread_atfork
+#endif
+
 namespace dt {
 
 
@@ -51,10 +56,13 @@ thread_pool::thread_pool()
   : num_threads_requested(0),
     current_team(nullptr)
 {
-  if (!after_fork_handler_registered) {
-    pthread_atfork(nullptr, nullptr, _child_cleanup_after_fork);
-    after_fork_handler_registered = true;
-  }
+  #if !DT_OS_WINDOWS
+    // no fork on Windows
+    if (!after_fork_handler_registered) {
+      pthread_atfork(nullptr, nullptr, _child_cleanup_after_fork);
+      after_fork_handler_registered = true;
+    }
+  #endif
 }
 
 // In the current implementation the thread_pool instance never gets deleted

@@ -29,11 +29,6 @@
 #include "column.h"
 #include "wstringcol.h"
 
-#if DT_OS_WINDOWS
-  // In msvc copysign is not a member of std.
-  #define std::copysign copysign
-#endif
-
 
 namespace dt {
 
@@ -733,7 +728,7 @@ T Ftrl<T>::predict_row(const uint64ptr& x, tptr<T>& w, size_t k, F fifn) {
     size_t j = x[i];
     T absw = std::max(std::abs(z[k][j]) - lambda1, T(0)) /
              (std::sqrt(n[k][j]) * ialpha + gamma);
-    w[i] = -std::copysign(absw, z[k][j]);
+    w[i] = -copysign(absw, z[k][j]);
     wTx += w[i];
     fifn(i, absw);
   }

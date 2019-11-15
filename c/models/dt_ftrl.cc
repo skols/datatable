@@ -31,7 +31,7 @@
 
 #if DT_OS_WINDOWS
   // In msvc copysign is not a member of std.
-  #define copysign std::copysign
+  #define std::copysign copysign
 #endif
 
 

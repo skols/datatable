@@ -29,6 +29,12 @@
 #include "column.h"
 #include "wstringcol.h"
 
+#if DT_OS_WINDOWS
+  // In msvc copysign is not a member of std.
+  #define copysign std::copysign
+#endif
+
+
 namespace dt {
 
 

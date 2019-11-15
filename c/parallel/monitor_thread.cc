@@ -15,11 +15,6 @@
 //------------------------------------------------------------------------------
 /* enable nice() function in unistd.h */
 #define _XOPEN_SOURCE
-#if DT_OS_WINDOWS
-  #include <io.h>            // write
-#else
-  #include <unistd.h>        // write
-#endif
 #include <iostream>
 #include <csignal> // std::signal
 #include "parallel/monitor_thread.h"
@@ -27,6 +22,13 @@
 #include "progress/progress_manager.h"  // dt::progress::progress_manager
 #include "utils/exceptions.h"
 #include "parallel/api.h"
+#include "utils/macros.h"
+
+#if DT_OS_WINDOWS
+  #include <io.h>            // write
+#else
+  #include <unistd.h>        // write
+#endif
 
 
 namespace dt {

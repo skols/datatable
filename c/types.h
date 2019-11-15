@@ -421,6 +421,16 @@ namespace dt {
   template<> inline bool isnan(float x)    { return std::isnan(x); }
   template<> inline bool isnan(double x)   { return std::isnan(x); }
 
+
+  /**
+   * dt::isfinite is a portable equivalent of std::isfinite. NB: std::isfinite
+   * will error in msvc when called on integral types.
+   */
+  template <typename T>
+             inline bool isfinite(T)          { return true;  }
+  template<> inline bool isfinite(float x)    { return std::isfinite(x); }
+  template<> inline bool isfinite(double x)   { return std::isfinite(x); }
+
 }
 
 

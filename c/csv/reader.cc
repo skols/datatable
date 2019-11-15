@@ -17,6 +17,7 @@
 #include "python/string.h"
 #include "utils/exceptions.h"
 #include "utils/misc.h"         // wallclock
+#include "utils/macros.h"
 #include "datatable.h"
 #include "encodings.h"
 #include "options.h"
@@ -389,7 +390,9 @@ bool GenericReader::extra_byte_accessible() const {
 }
 
 
-__attribute__((format(printf, 2, 3)))
+#if !DT_OS_WINDOWS
+  __attribute__((format(printf, 2, 3)))
+#endif
 void GenericReader::trace(const char* format, ...) const {
   if (!verbose) return;
   va_list args;
@@ -398,7 +401,9 @@ void GenericReader::trace(const char* format, ...) const {
   va_end(args);
 }
 
-__attribute__((format(printf, 2, 3)))
+#if !DT_OS_WINDOWS
+  __attribute__((format(printf, 2, 3)))
+#endif
 void GenericReader::warn(const char* format, ...) const {
   va_list args;
   va_start(args, format);

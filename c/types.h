@@ -410,6 +410,20 @@ template<> inline bool ISNA(float x)    { return std::isnan(x); }
 template<> inline bool ISNA(double x)   { return std::isnan(x); }
 template<> inline bool ISNA(PyObject* x) { return x == Py_None; }
 
+
+namespace dt {
+  /**
+   * dt::isnan is a portable equivalent of std::isnan. NB: std::isnan
+   * will error in msvc when called on integral types.
+   */
+  template <typename T>
+             inline bool isnan(T)          { return false;  }
+  template<> inline bool isnan(float x)    { return std::isnan(x); }
+  template<> inline bool isnan(double x)   { return std::isnan(x); }
+
+}
+
+
 /**
  * Similar to ISNA<T>(x) template, except it returns true only for integer-
  * valued types which are NAs.

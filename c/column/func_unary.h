@@ -119,7 +119,7 @@ bool FuncUnary1_ColumnImpl<TI, TO>::get_element(size_t i, TO* out) const {
   if (!xvalid) return false;
   TO value = func_(x);
   *out = value;
-  return !std::isnan(value);
+  return !dt::isnan(value);
 }
 
 

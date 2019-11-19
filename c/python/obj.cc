@@ -46,13 +46,16 @@ static PyObject* numpy_float64 = nullptr;
 static void init_pandas();
 static void init_numpy();
 
+
+#undef _Py_static_string_init
+#define _Py_static_string_init(value) { NULL, value, NULL }
+
 // Set from datatablemodule.cc
 PyObject* Expr_Type = nullptr;
 
 _Py_IDENTIFIER(stdin);
 _Py_IDENTIFIER(stdout);
 _Py_IDENTIFIER(write);
-
 
 
 //------------------------------------------------------------------------------

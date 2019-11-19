@@ -361,6 +361,7 @@ void py::DatatableModule::init_methods() {
 }
 
 
+extern "C" {
 /* Called when Python program imports the module */
 PyMODINIT_FUNC PyInit__datatable() noexcept
 {
@@ -396,4 +397,6 @@ PyMODINIT_FUNC PyInit__datatable() noexcept
   }
 
   return m;
+}
+
 }

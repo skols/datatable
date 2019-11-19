@@ -21,15 +21,15 @@
 //------------------------------------------------------------------------------
 #include <csignal>
 #include <iostream>
-#include <sys/ioctl.h>
+// #include <sys/ioctl.h>
 #include "frame/repr/repr_options.h"
 #include "utils/assert.h"
 #include "utils/terminal/terminal.h"
 namespace dt {
 
-static void sigwinch_handler(int) {
-  Terminal::standard_terminal().forget_window_size();
-}
+// static void sigwinch_handler(int) {
+//   Terminal::standard_terminal().forget_window_size();
+// }
 
 
 
@@ -58,7 +58,7 @@ Terminal::Terminal(bool is_plain) {
   is_ipython_ = false;
   if (!enable_ecma48_) xassert(!enable_colors_);
   if (!is_plain) {
-    std::signal(SIGWINCH, sigwinch_handler);
+    // std::signal(SIGWINCH, sigwinch_handler);
   }
 }
 
@@ -163,14 +163,14 @@ void Terminal::forget_window_size() {
 }
 
 void Terminal::_detect_window_size() {
-  struct winsize w;
-  int ret = ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-  width_ = w.ws_col;
-  height_ = w.ws_row;
-  if (ret == -1 || width_ == 0) {
+  // struct winsize w;
+  // int ret = ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+  // width_ = w.ws_col;
+  // height_ = w.ws_row;
+  // if (ret == -1 || width_ == 0) {
     width_ = 120;
     height_ = 45;
-  }
+  // }
 }
 
 void Terminal::use_unicode(bool f) {

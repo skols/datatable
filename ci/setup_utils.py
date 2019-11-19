@@ -122,8 +122,7 @@ def ismacos():
 def iswindows():
     return sys.platform == "win32"
 
-
-
+libpath_flag = "/LIBPATH:" if iswindows() else "-L"
 
 def get_datatable_version():
     # According to PEP-440, the canonical version must have the following
@@ -572,13 +571,14 @@ def get_extra_link_args():
         libs = sorted(set(os.path.dirname(lib)
                           for lib in find_linked_dynamic_libraries()))
         for lib in libs:
-            flags += ["-L%s" % lib]
+            flags += [libpath_flag + lib]
 
         # link zlib compression library
         flags += ["-lz"]
         libdir = sysconfig.get_config_var("LIBDIR")
+
         if libdir:
-            flags += ["-L" + sysconfig.get_config_var("LIBDIR")]
+            flags += [libpath_flag + sysconfig.get_config_var("LIBDIR")]
 
         for flag in flags:
             log.info(flag)
@@ -676,10 +676,10 @@ def monkey_patch_compiler():
         """
 
         def get_load_dylib_entries(self, executable, log):
-            otool_result = run(["otool", "-L", executable]).decode()
+            otool_result = run(["otool", libpath_flag, executable]).decode()
             log.info("Checking dependencies of %s"
                      % os.path.basename(executable))
-            log.info("  $ otool -L %s" % executable)
+            log.info("  $ otool %s %s" % libpath_flag, executable)
             execname = os.path.basename(executable)
             dylibs = []
             for libinfo in otool_result.split('\n')[1:]:
@@ -761,14 +761,14 @@ def monkey_patch_compiler():
             new_linker = []
             delayed_args = []
             for arg in self.library_dirs:
-                if not arg.startswith("-L"):
-                    arg = "-L" + arg
+                if not arg.startswith(libpath_flag):
+                    arg = libpath_flag + arg
                 delayed_args.append(arg)
             if hasattr(self, 'linker_so'):
                 for arg in self.linker_so:
                     if arg in seen_args: continue
                     seen_args.add(arg)
-                    if arg.startswith("-L"):
+                    if arg.startswith(libpath_flag):
                         delayed_args.append(arg)
                     else:
                         new_linker.append(arg)

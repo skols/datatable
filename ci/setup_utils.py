@@ -764,13 +764,14 @@ def monkey_patch_compiler():
                 if not arg.startswith("-L"):
                     arg = "-L" + arg
                 delayed_args.append(arg)
-            for arg in self.linker_so:
-                if arg in seen_args: continue
-                seen_args.add(arg)
-                if arg.startswith("-L"):
-                    delayed_args.append(arg)
-                else:
-                    new_linker.append(arg)
+            if hasattr(self, 'linker_so'):
+                for arg in self.linker_so:
+                    if arg in seen_args: continue
+                    seen_args.add(arg)
+                    if arg.startswith("-L"):
+                        delayed_args.append(arg)
+                    else:
+                        new_linker.append(arg)
             self.linker_so = new_linker
             self.library_dirs = []
             self.delayed_libraries = delayed_args

@@ -551,7 +551,8 @@ def get_default_link_flags():
 def get_extra_link_args():
     flags = []
     with TaskContext("Determine the extra linker flags") as log:
-        flags += ["-Wl,-rpath,%s" % get_rpath()]
+        if not iswindows():
+            flags += ["-Wl,-rpath,%s" % get_rpath()]
 
         if islinux() and is_clang():
             flags += ["-lc++"]
@@ -574,7 +575,7 @@ def get_extra_link_args():
             flags += [libpath_flag + lib]
 
         # link zlib compression library
-        flags += ["-lz"]
+        flags += ["zlibstatic.lib"] if iswindows() else ["-lz"]
         libdir = sysconfig.get_config_var("LIBDIR")
 
         if libdir:

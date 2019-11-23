@@ -4,6 +4,9 @@
 // You may obtain a copy of the License at
 //
 // https://opensource.org/licenses/MIT
+#include "utils/macros.h"
+
+#if DT_OS_WINDOWS
 
 #ifndef _MMAN_WIN32_H
 #define _MMAN_WIN32_H
@@ -55,5 +58,7 @@ int mprotect(void *addr, size_t len, int prot);
 int msync(void *addr, size_t len, int flags);
 int mlock(const void *addr, size_t len);
 int munlock(const void *addr, size_t len);
+
+#endif
 
 #endif

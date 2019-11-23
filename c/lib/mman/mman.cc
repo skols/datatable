@@ -1,4 +1,14 @@
+// Copyright https://code.google.com/p/mman-win32/
+//
+// Licensed under the MIT License;
+// You may obtain a copy of the License at
+//
+// https://opensource.org/licenses/MIT
+#include "utils/macros.h"
+#if DT_OS_WINDOWS
+
 #include "lib/mman/mman.h"
+
 int __map_mman_error(const DWORD err, const int deferr) {
   if (err == 0)
     return 0;
@@ -152,3 +162,5 @@ int munlock(const void *addr, size_t len) {
 
   return -1;
 }
+
+#endif

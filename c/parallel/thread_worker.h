@@ -181,8 +181,6 @@ class idle_job : public thread_scheduler {
     // This callback should be called before a thread is removed from the
     // threadpool.
     void on_before_thread_removed();
-    void enable_monitor(bool) const noexcept;
-    bool is_monitor_enabled() const noexcept;
 };
 
 

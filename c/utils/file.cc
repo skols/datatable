@@ -20,7 +20,7 @@
   #define FTRUNCATE _chsize
 #else
   #include <unistd.h>
-  #define FTRUNCATE ftruncate;
+  #define FTRUNCATE ftruncate
 #endif
 
 

@@ -22,6 +22,7 @@
 #ifndef dt_UTILS_MACROS_h
 #define dt_UTILS_MACROS_h
 
+#include <utility>
 
 //------------------------------------------------------------------------------
 // Operating system

@@ -459,7 +459,10 @@ def get_extra_compile_flags():
                       "-fsanitize-address-use-after-scope",
                       "-shared-libasan"]
         elif "DTDEBUG" in os.environ:
-            flags += ["-g3", "-ggdb", "-O0"]
+            if iswindows():
+                flags += ["/DEBUG:FULL", "/Z7"]
+            else:
+                flags += ["-g3", "-ggdb", "-O0"]
             flags += ["-DDTTEST", "-DDTDEBUG"]
         elif "DTCOVERAGE" in os.environ:
             flags += ["-g2", "--coverage", "-O0"]

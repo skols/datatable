@@ -77,6 +77,7 @@ class thread_pool {
     thread_team* current_team;
 
   public:
+    std::unique_ptr<monitor_thread> monitor;
     thread_pool();
     thread_pool(const thread_pool&) = delete;
     // Not moveable: workers hold pointers to this->controller.

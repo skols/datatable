@@ -460,7 +460,7 @@ def get_extra_compile_flags():
                       "-shared-libasan"]
         elif "DTDEBUG" in os.environ:
             if iswindows():
-                flags += ["/DEBUG:FULL", "/Z7"]
+                flags += ["/Z7"]
             else:
                 flags += ["-g3", "-ggdb", "-O0"]
             flags += ["-DDTTEST", "-DDTDEBUG"]
@@ -557,6 +557,10 @@ def get_extra_link_args():
         if not iswindows():
             flags += ["-Wl,-rpath,%s" % get_rpath()]
 
+        if "DTDEBUG" in os.environ:
+            if iswindows():
+                flags += ["/DEBUG:FULL"]
+
         if islinux() and is_clang():
             flags += ["-lc++"]
         if islinux():
@@ -578,7 +582,7 @@ def get_extra_link_args():
             flags += [libpath_flag + lib]
 
         # link zlib compression library
-        flags += ["zlibstatic.lib"] if iswindows() else ["-lz"]
+        flags += ["zlibstatic.lib" if iswindows() else "-lz"]
         libdir = sysconfig.get_config_var("LIBDIR")
 
         if libdir:

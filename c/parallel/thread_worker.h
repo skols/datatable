@@ -148,8 +148,6 @@ class idle_job : public thread_scheduler {
     // Thread-worker object corresponding to the master thread.
     thread_worker* master_worker;
 
-    std::unique_ptr<monitor_thread> monitor;
-
   public:
     idle_job();
 

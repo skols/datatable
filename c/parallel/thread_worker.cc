@@ -18,6 +18,7 @@
 #include "utils/assert.h"
 #include "utils/exceptions.h"
 #include "parallel/api.h"
+#include "parallel/thread_pool.h"
 namespace dt {
 
 
@@ -131,7 +132,6 @@ idle_job::idle_job() {
   curr_sleep_task = new sleep_task(this);
   prev_sleep_task = new sleep_task(this);
   n_threads_running = 0;
-  monitor = std::unique_ptr<monitor_thread>(new monitor_thread(this));
 }
 
 
@@ -173,7 +173,7 @@ void idle_job::awaken_and_run(thread_scheduler* job, size_t nthreads) {
 
   prev_sleep_task->next_scheduler = job;
   prev_sleep_task->semaphore.signal(nth);
-  monitor->set_active(true);
+  thpool->monitor->set_active(true);
   master_worker->run_master(job);
 }
 
@@ -186,7 +186,7 @@ void idle_job::join() {
   // Clear `.next_scheduler` flag of the previous sleep task, indicating that
   // we no longer run in a parallel region (see `is_running()`).
   prev_sleep_task->next_scheduler = nullptr;
-  monitor->set_active(false);
+  thpool->monitor->set_active(false);
 
   if (saved_exception) {
     progress::manager->reset_interrupt_status();
@@ -198,12 +198,12 @@ void idle_job::join() {
 
 
 void idle_job::enable_monitor(bool a) const noexcept {
-  monitor->set_active(a);
+  thpool->monitor->set_active(a);
 }
 
 
 bool idle_job::is_monitor_enabled() const noexcept {
-  return monitor->get_active();
+  return thpool->monitor->get_active();
 }
 
 

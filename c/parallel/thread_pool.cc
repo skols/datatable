@@ -86,6 +86,11 @@ void thread_pool::resize(size_t n) {
 
 void thread_pool::instantiate_threads() {
   size_t n = num_threads_requested;
+  if (!monitor) {
+    monitor = std::unique_ptr<monitor_thread>(
+                new monitor_thread(&controller)
+              );
+  }
   if (workers.size() == n) return;
   if (workers.size() < n) {
     workers.reserve(n);
@@ -192,7 +197,7 @@ size_t get_hardware_concurrency() noexcept {
 
 
 std::mutex& python_mutex() {
-  return thpool->controller.monitor->mutex;
+  return thpool->monitor->mutex;
 }
 
 

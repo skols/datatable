@@ -86,11 +86,7 @@ void thread_pool::resize(size_t n) {
 
 void thread_pool::instantiate_threads() {
   size_t n = num_threads_requested;
-  if (!monitor) {
-    monitor = std::unique_ptr<monitor_thread>(
-                new monitor_thread(&controller)
-              );
-  }
+  prepare_monitor();
   if (workers.size() == n) return;
   if (workers.size() < n) {
     workers.reserve(n);
@@ -121,6 +117,15 @@ void thread_pool::instantiate_threads() {
 }
 
 
+void thread_pool::prepare_monitor() noexcept {
+  if (!monitor) {
+    monitor = std::unique_ptr<monitor_thread>(
+                new monitor_thread(&controller)
+              );
+  }
+}
+
+
 void thread_pool::execute_job(thread_scheduler* job) {
   xassert(current_team);
   if (workers.empty()) instantiate_threads();
@@ -145,13 +150,15 @@ thread_team* thread_pool::get_team_unchecked() noexcept {
 }
 
 
-void thread_pool::enable_monitor(bool a) const noexcept {
-  controller.enable_monitor(a);
+void thread_pool::enable_monitor(bool a) noexcept {
+  prepare_monitor();
+  monitor->set_active(a);
 }
 
 
-bool thread_pool::is_monitor_enabled() const noexcept {
-  return controller.is_monitor_enabled();
+bool thread_pool::is_monitor_enabled() noexcept {
+  prepare_monitor();
+  return monitor->get_active();
 }
 
 
@@ -159,12 +166,12 @@ bool thread_pool::is_monitor_enabled() const noexcept {
 // Misc
 //------------------------------------------------------------------------------
 
-bool is_monitor_enabled() noexcept {
-  return thpool->is_monitor_enabled();
-}
-
 void enable_monitor(bool a) noexcept {
   thpool->enable_monitor(a);
+}
+
+bool is_monitor_enabled() noexcept {
+  return thpool->is_monitor_enabled();
 }
 
 size_t num_threads_in_pool() {

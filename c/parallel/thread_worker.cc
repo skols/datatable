@@ -197,16 +197,6 @@ void idle_job::join() {
 }
 
 
-void idle_job::enable_monitor(bool a) const noexcept {
-  thpool->monitor->set_active(a);
-}
-
-
-bool idle_job::is_monitor_enabled() const noexcept {
-  return thpool->monitor->get_active();
-}
-
-
 void idle_job::set_master_worker(thread_worker* worker) noexcept {
   master_worker = worker;
 }

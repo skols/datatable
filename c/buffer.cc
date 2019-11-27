@@ -470,7 +470,7 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
   protected:
     virtual void memmap() {
       if (mapped_) return;
-      #if DT_OS_WINDOWS
+      #if 0
         throw NotImplError() << "Memory-mapping not supported on Windows yet";
 
       #else
@@ -562,7 +562,7 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
 
     void memunmap() noexcept {
       if (!mapped_) return;
-      #if !DT_OS_WINDOWS
+      #if 1
         if (data_) {
           int ret = munmap(data_, size_);
           if (ret) {

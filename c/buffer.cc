@@ -18,7 +18,9 @@
 #include "buffer.h"
 #include "mmm.h"               // MemoryMapWorker, MemoryMapManager
 
-#if !DT_OS_WINDOWS
+#if DT_OS_WINDOWS
+  #include "lib/mman/mman.h"   // mmap, munmap
+#else
   #include <sys/mman.h>        // mmap, munmap
 #endif
 
@@ -467,10 +469,6 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
   protected:
     virtual void memmap() {
       if (mapped_) return;
-      #if DT_OS_WINDOWS
-        throw NotImplError() << "Memory-mapping not supported on Windows yet";
-
-      #else
         // Place a mutex lock to prevent multiple threads from trying
         // to perform memory-mapping of different files (or same file)
         // in parallel. If multiple threads called this method at the
@@ -554,12 +552,10 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
         }
         mapped_ = true;
         xassert(mmm_index_);
-      #endif
     }
 
     void memunmap() noexcept {
       if (!mapped_) return;
-      #if !DT_OS_WINDOWS
         if (data_) {
           int ret = munmap(data_, size_);
           if (ret) {
@@ -579,7 +575,6 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
           } catch (...) {}
           mmm_index_ = 0;
         }
-      #endif
     }
 };
 

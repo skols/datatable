@@ -64,7 +64,7 @@ class Compiler:
     def executable(self, value):
         assert isinstance(value, str)
         self._executable = value
-        self._flavor = "msvc" if "msvc" in value else \
+        self._flavor = "msvc" if "cl.exe" in value else \
                        "clang" if "clang" in value else \
                        "gcc" if "gcc" in value or "g++" in value else \
                        "unknown"
@@ -106,7 +106,7 @@ class Compiler:
         e = self._executable
         f = self._flavor
         self.executable = cc
-        proc = self.compile(source, target, silent=True)
+        proc = self.compile(source, target, silent=False)
         ret = proc.wait()
         self._executable = e
         self._flavor = f
@@ -137,7 +137,7 @@ class Compiler:
 
             candidates = ["/usr/local/opt/llvm/bin/clang", "gcc", "clang", "cc"]
             if sys.platform == "win32":
-                candidates = ["msvc.exe"] + [cc + ".exe" for cc in candidates]
+                candidates = ["cl.exe"] + [cc + ".exe" for cc in candidates]
 
             for cc in candidates:
                 if self._check_compiler(cc, srcname, outname):
@@ -181,7 +181,7 @@ class Compiler:
 
 
     def add_default_python_include_dir(self):
-        dd = sysconfig.get_config_var("CONFINCLUDEPY")
+        dd = sysconfig.get_config_var("INCLUDEPY")
         if not os.path.isdir(dd):
             self._log.warn("Python include directory `%s` does not exist, "
                            "compilation may fail" % dd)
@@ -199,13 +199,14 @@ class Compiler:
 
 
     def enable_colors(self):
-        self._compiler_flags.append("-fdiagnostics-color=always")
+        if not self.is_msvc():
+            self._compiler_flags.append("-fdiagnostics-color=always")
 
 
     def get_compile_command(self, source, target):
         cmd = [self.executable] + self._compiler_flags
         if self.is_msvc():
-            cmd += ["/c" + source, "/Fo" + target]
+            cmd += ["/c", source, "/Fo" + target]
         else:
             cmd += ["-c", source, "-o", target]
         return cmd

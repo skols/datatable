@@ -28,9 +28,12 @@
 #include "utils/macros.h"
 #include "column.h"
 #include "wstringcol.h"
+#if DT_OS_WINDOWS
+  #undef copysign
+#endif
+
 
 namespace dt {
-
 
 /**
  *  Constructor based on the provided parameters.

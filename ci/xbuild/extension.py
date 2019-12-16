@@ -572,7 +572,7 @@ class Extension:
         """
         src_path = os.path.dirname(src_file)
         includes = []
-        with open(src_file, "rt") as inp:
+        with open(src_file, "rt", encoding = "utf-8") as inp:
             for line in inp:
                 mm = re.match(rx_include, line)
                 if mm:

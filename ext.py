@@ -53,6 +53,7 @@ def build_extension(cmd, verbosity=3):
 
     if ext.compiler.is_msvc():
         ext.compiler.add_compiler_flag("/W4")
+        ext.compiler.add_compiler_flag("/EHsc")
 
     else:
         # Common compile flags

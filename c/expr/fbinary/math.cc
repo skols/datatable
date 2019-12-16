@@ -22,6 +22,11 @@
 #include "expr/fbinary/bimaker.h"
 #include "expr/fbinary/bimaker_impl.h"
 #include "python/args.h"
+#include "utils/macros.h"
+#if DT_OS_WINDOWS
+  #undef copysign
+#endif
+
 namespace dt {
 namespace expr {
 
@@ -170,7 +175,7 @@ py::PKArgs args_copysign(2, 0, 0, false, false, {"x", "y"}, "copysign",
 
 
 template <typename T>
-static bimaker_ptr _copysign(SType uptype1, SType uptype2, SType outtype) {
+static bimaker_ptr bm_copysign(SType uptype1, SType uptype2, SType outtype) {
   return bimaker1<T, T, T>::make(std::copysign, uptype1, uptype2, outtype);
 }
 
@@ -179,8 +184,8 @@ bimaker_ptr resolve_fn_copysign(SType stype1, SType stype2) {
   SType uptype1, uptype2;
   SType stype0 = _resolve_math_stypes(stype1, stype2, &uptype1, &uptype2);
   switch (stype0) {
-    case SType::FLOAT32:  return _copysign<float>(uptype1, uptype2, stype0);
-    case SType::FLOAT64:  return _copysign<double>(uptype1, uptype2, stype0);
+    case SType::FLOAT32:  return bm_copysign<float>(uptype1, uptype2, stype0);
+    case SType::FLOAT64:  return bm_copysign<double>(uptype1, uptype2, stype0);
     default:
       throw TypeError() << "Cannot apply function `copysign()` to columns with "
           "types `" << stype1 << "` and `" << stype2 << "`";

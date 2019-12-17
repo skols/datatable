@@ -21,6 +21,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 #-------------------------------------------------------------------------------
+import io
 import os
 import subprocess
 import sys
@@ -40,10 +41,10 @@ class Compiler:
         self._flavor = None        # 'msvc'|'gcc'|'clang'|'unknown'
 
         # Parent `Extension` class
-        self._parent = None        # xbuild.extension.Extension
-        self._compiler_flags = []  # List[str]
-        self._include_dirs = []    # List[str]
-        self._linker_flags = []    # List[str]
+        self._parent = None         # xbuild.extension.Extension
+        self._compiler_flags = []   # List[str]
+        self._include_dirs = []     # List[str]
+        self._linker_flags = []     # List[str]
 
 
     @property
@@ -105,13 +106,16 @@ class Compiler:
         """
         e = self._executable
         f = self._flavor
-        self.executable = cc
-        proc = self.compile(source, target, silent=False)
-        ret = proc.wait()
-        self._executable = e
-        self._flavor = f
-        return (ret == 0)
-
+        try:
+            self.executable = cc
+            proc = self.compile(source, target, silent=False)
+            ret = proc.wait()
+            return (ret == 0)
+        except:
+            return False
+        finally:
+            self._executable = e
+            self._flavor = f
 
     def _detect_compiler_executable(self):
         fd, srcname = tempfile.mkstemp(suffix=".cc")
@@ -135,9 +139,13 @@ class Compiler:
                 self.log.report_compiler_executable(compiler, env=envvar)
                 return
 
-            candidates = ["/usr/local/opt/llvm/bin/clang", "gcc", "clang", "cc"]
             if sys.platform == "win32":
-                candidates = ["cl.exe"] + [cc + ".exe" for cc in candidates]
+                candidates = ["cl.exe", "clang.exe", "gcc.exe"]
+            elif sys.platform == "darwin":
+                candidates = ["/usr/local/opt/llvm/bin/clang", "clang"]
+            else:
+                candidates = ["gcc", "/usr/local/opt/llvm/bin/clang",
+                              "clang", "cc"]
 
             for cc in candidates:
                 if self._check_compiler(cc, srcname, outname):
@@ -218,9 +226,11 @@ class Compiler:
         if not silent:
             self.log.report_compile_start(src, cmd)
 
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
+        fd, srcname = tempfile.mkstemp(suffix=".out")
+        proc = subprocess.Popen(cmd, stdout=fd, stderr=fd)
+        proc.fd = fd
         proc.source = src
+        proc.output = srcname
         return proc
 
 
@@ -237,12 +247,18 @@ class Compiler:
 
 
     def get_link_command(self, sources, target):
-        cmd = [self.executable] + self._linker_flags
+        cmd = ["C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Tools\\MSVC\\14.24.28314\\bin\\HostX86\\x64\\link.exe"]
+        # cmd = [self.executable]
         cmd += sources
         if self.is_msvc():
-            cmd += ["/Fe:", target]
+            cmd += ["/OUT:" + target]
+            # cmd += ["/IMPLIB:datatable\\lib\\_datatable.lib"]
         else:
             cmd += ["-o", target]
+        # Certain linker flags (such as included libraries) must come AFTER the
+        # list of object files. Should we give the user a better control over
+        # the location of different flags?
+        cmd += self._linker_flags
         return cmd
 
 
@@ -251,5 +267,8 @@ class Compiler:
         cmd = self.get_link_command(obj_files, target)
         self.log.report_link_file(target, cmd)
 
-        return subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
+        fd, srcname = tempfile.mkstemp(suffix=".out")
+        proc = subprocess.Popen(cmd, stdout=fd, stderr=fd)
+        proc.fd = fd
+        proc.output = srcname
+        return proc

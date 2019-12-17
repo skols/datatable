@@ -75,8 +75,10 @@ class Logger0:
     def info(self, msg, indent=None): pass
 
     def report_errors_and_warnings(self, msgs, errors=False):
-        for msg in msgs:
-            print(msg)
+        if msgs:
+            print()
+            for msg in msgs:
+                print(msg)
 
 
 
@@ -235,7 +237,7 @@ class Logger3(Logger0):
 
     def report_sources(self, sources, pattern=None):
         if pattern is None:
-            self.info("Added source file %s" + sources)
+            self.info("Added source file %s" % sources)
         else:
             assert isinstance(sources, list)
             self.info("Added %d source files from pattern `%s`: %s"

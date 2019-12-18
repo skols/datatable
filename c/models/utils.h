@@ -111,9 +111,4 @@ template <typename T> inline bool _notnan(T) { return true; }
 template <> inline bool _notnan(float x) { return !std::isnan(x); }
 template <> inline bool _notnan(double x) { return !std::isnan(x); }
 
-
-template <typename T> inline T cpsign(T x, T y);
-template inline float cpsign(float x, float y);
-template inline double cpsign(double x, double y);
-
 #endif

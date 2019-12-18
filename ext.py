@@ -55,6 +55,7 @@ def build_extension(cmd, verbosity=0):
         ext.compiler.add_compiler_flag("/W4")
         ext.compiler.add_compiler_flag("/EHsc")
         ext.compiler.add_compiler_flag("/O2")
+        ext.compiler.add_compiler_flag("/nologo")
         # ext.compiler.add_compiler_flag("/W3")
         # ext.compiler.add_compiler_flag("/GL")
         # ext.compiler.add_compiler_flag("/DNDEBUG")
@@ -75,7 +76,7 @@ def build_extension(cmd, verbosity=0):
         # ext.compiler.add_compiler_flag("/I" + "C:\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.18362.0\\cppwinrt")
 
         # ext.compiler.add_linker_flag("/link")
-        # ext.compiler.add_linker_flag("/nologo")
+        ext.compiler.add_linker_flag("/nologo")
         # ext.compiler.add_linker_flag("/INCREMENTAL:NO")
         # ext.compiler.add_linker_flag("/LTCG")
         # ext.compiler.add_linker_flag("/nodefaultlib:libucrt.lib ucrt.lib")

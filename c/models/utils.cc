@@ -20,8 +20,15 @@
 // IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include <vector>
-#include <stdio.h>
 #include "models/utils.h"
+#include "utils/macros.h"
+#if DT_OS_WINDOWS
+  #undef copysign
+#endif
+
+template <typename T> inline T cpsign(T x, T y) {
+  return std::copysign(x, y);  
+}
 
 
 /**

@@ -144,6 +144,7 @@ class Compiler:
             if sys.platform == "win32":
                 self._detect_winsdk()
                 msvc_default_path = "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Tools\\MSVC\\"
+                # msvc_default_path = "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Tools\\MSVC"
                 msvc_path = os.environ.get("DT_MSVC_PATH", msvc_default_path)
                 if not os.path.isdir(msvc_path):
                     raise ValueError("Microsoft Visual Studio directory %s not found. "
@@ -213,7 +214,7 @@ class Compiler:
                 winsdk_version_dir = version
                 break
 
-        if winsdk_version_dir is "":
+        if winsdk_version_dir == "":
             raise ValueError("A valid Windows SDK version directory %s not found.")
 
         winsdk_include_path = winsdk_default_path + "\\Include\\" + winsdk_version_dir

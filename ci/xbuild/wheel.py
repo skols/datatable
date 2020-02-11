@@ -60,6 +60,11 @@ rx_version = re.compile(r"(?:\d+!)?"           # epoch
                         r"(?:\+[\w\.]+)?")     # local version segment
 
 
+if sys.version_info < (3,):
+    str_cls = unicode  # noqa
+else:
+    str_cls = str
+
 
 class Wheel:
     """
@@ -409,6 +414,27 @@ class Wheel:
     # Tags
     #---------------------------------------------------------------------------
 
+    def _pep425_implementation(self):
+        """
+        :return:
+            A 2 character unicode string of the implementation - 'cp' for cpython
+            or 'pp' for PyPy
+        """
+
+        return 'pp' if hasattr(sys, 'pypy_version_info') else 'cp'
+
+    def _pep425_version(self):
+        """
+        :return:
+            A tuple of integers representing the Python version number
+        """
+
+        if hasattr(sys, 'pypy_version_info'):
+            return (sys.version_info[0], sys.pypy_version_info.major,
+                    sys.pypy_version_info.minor)
+        else:
+            return (sys.version_info[0], sys.version_info[1])
+
     def _get_python_tag(self):
         impl = sys.implementation.name
         assert impl == "cpython"
@@ -417,10 +443,24 @@ class Wheel:
         return "cp" + str(major) + str(minor)
 
     def _get_abi_tag(self):
-        soabi = sysconfig.get_config_var("SOABI")
-        parts = soabi.split("-")
-        assert parts[0] == "cpython"
-        return "cp" + parts[1]
+        try:
+            soabi = sysconfig.get_config_var("SOABI")
+            # soabi = "cpython-38m"  # datatable environment
+            # soabi = "cpython-37m" # data_analysis environment
+            parts = soabi.split("-")
+            assert parts[0] == "cpython"
+            return "cp" + parts[1]
+        except Exception as e:
+            print(e)
+            pass
+
+        impl = self._pep425_implementation()
+        suffix = ''
+        if impl == 'cp':
+            suffix += 'm'
+        if sys.maxunicode == 0x10ffff and sys.version_info < (3, 3):
+            suffix += 'u'
+        return '%s%s%s' % (impl, ''.join(map(str_cls, self._pep425_version())), suffix)
 
     def get_tag(self):
         if self._tag is None:

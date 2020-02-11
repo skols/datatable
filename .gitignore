@@ -51,3 +51,5 @@ microbench/groupby/groupby
 
 # Auto-generated files
 src/datatable/_build_info.py
+
+pyver.py

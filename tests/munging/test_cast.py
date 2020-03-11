@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #-------------------------------------------------------------------------------
-# Copyright 2018 H2O.ai
+# Copyright 2018-2020 H2O.ai
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -142,7 +142,7 @@ def test_cast_other_to_numeric(source_stype, target_stype):
     assert DT.stypes == (source_stype,)
     with pytest.raises(NotImplementedError) as e:
         noop(DT[:, target_stype(f.W)])
-    assert ("Unable to cast `%s` into `%s`"
+    assert ("Unable to cast %s into %s"
             % (source_stype.name, target_stype.name) in str(e.value))
 
 
@@ -252,6 +252,15 @@ def test_cast_huge_to_str():
     RES = DT[:, dt.str32(f.BIG)]
     assert RES.stypes == (dt.str64,)
     assert RES[-1, 0] == DT[0, 0]
+
+
+def test_cast_empty_str32_to_str64():
+    # See issue #2369
+    DT = dt.Frame(A=[], stype=dt.str32)
+    DT['A'] = dt.str64
+    assert_equals(DT, dt.Frame(A=[], stype=dt.str64))
+    DT['A'] = dt.str32
+    assert_equals(DT, dt.Frame(A=[], stype=dt.str32))
 
 
 

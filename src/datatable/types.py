@@ -1,17 +1,37 @@
-#!/usr/bin/env python3
-# © H2O.ai 2018; -*- encoding: utf-8 -*-
-#   This Source Code Form is subject to the terms of the Mozilla Public
-#   License, v. 2.0. If a copy of the MPL was not distributed with this
-#   file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#-------------------------------------------------------------------------------
+# Copyright 2018-2020 H2O.ai
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+# IN THE SOFTWARE.
 #-------------------------------------------------------------------------------
 import ctypes
 import enum
+from datatable.exceptions import ValueError
 from datatable.expr.expr import Expr, OpCodes
 from datatable.lib import core
-from datatable.utils.typechecks import TValueError
 
 __all__ = ("stype", "ltype")
 
+
+class typed_list(list):
+    __slots__ = ["type"]
 
 
 @enum.unique
@@ -135,6 +155,14 @@ class stype(enum.Enum):
         return _stype_extrema.get(self, (None, None))[1]
 
 
+    def __rtruediv__(self, lhs):
+        if isinstance(lhs, list):
+            res = typed_list(lhs)
+            res.type = self
+            return res
+        return NotImplemented
+
+
 
 #-------------------------------------------------------------------------------
 
@@ -197,9 +225,9 @@ def ___new___(cls, value):
                 return cls._value2member_map_[value]
     except TypeError:
         # `value` is not hasheable -- not valid for our enum. Pass-through
-        # and raise the TValueError below.
+        # and raise the ValueError below.
         pass
-    raise TValueError("`%r` does not map to any %s" % (value, cls.__name__))
+    raise ValueError("`%r` does not map to any %s" % (value, cls.__name__))
 
 
 setattr(stype, "__new__", ___new___)

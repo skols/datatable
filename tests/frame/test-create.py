@@ -30,7 +30,8 @@ import os
 import pytest
 import random
 import datatable as dt
-from datatable import ltype, stype, DatatableWarning
+from datatable import ltype, stype
+from datatable.exceptions import DatatableWarning
 from datatable.internal import frame_integrity_check
 from tests import same_iterables, list_equals, assert_equals
 
@@ -42,21 +43,21 @@ from tests import same_iterables, list_equals, assert_equals
 def test_stypes_stype():
     with pytest.raises(TypeError) as e:
         dt.Frame(stypes=[], stype="float32")
-    assert ("You can pass either parameter `stypes` or `stype` to Frame() "
+    assert ("You can pass either parameter stypes or stype to Frame() "
             "constructor, but not both at the same time" == str(e.value))
 
 
 def test_bad_stype():
     with pytest.raises(TypeError) as e:
         dt.Frame(stype=-1)
-    assert ("Invalid value for `stype` parameter in Frame() constructor" ==
+    assert ("Invalid value for stype parameter in Frame() constructor" ==
             str(e.value))
 
 
 def test_bad_stypes():
     with pytest.raises(TypeError) as e:
         dt.Frame([], stypes=2.5)
-    assert ("Argument `stypes` in Frame() constructor should be a list of "
+    assert ("Argument stypes in Frame() constructor should be a list of "
             "stypes, instead received <class 'float'>" == str(e.value))
 
 
@@ -92,7 +93,7 @@ def test_unknown_args():
 def test_stypes_dict():
     with pytest.raises(TypeError) as e:
         dt.Frame([1, 2, 3], stypes={"A": float})
-    assert ("When parameter `stypes` is a dictionary, column `names` must "
+    assert ("When parameter stypes is a dictionary, column names must "
             "be explicitly specified" == str(e.value))
 
 
@@ -184,7 +185,7 @@ def test_create_from_nothing_with_names():
 def test_create_from_empty_list_bad():
     with pytest.raises(ValueError) as e:
         dt.Frame([], stypes=["int32", "str32"])
-    assert ("The `stypes` argument contains 2 elements, which is more than the "
+    assert ("The stypes argument contains 2 elements, which is more than the "
             "number of columns being created (0)" in str(e.value))
 
 
@@ -252,7 +253,7 @@ def test_create_from_list_of_lists_with_stypes_dict():
 def test_create_from_list_of_lists_with_stypes_dict_bad():
     with pytest.raises(TypeError) as e:
         dt.Frame([[4], [9], [3]], stypes={"c": float})
-    assert ("When parameter `stypes` is a dictionary, column `names` must be "
+    assert ("When parameter stypes is a dictionary, column names must be "
             "explicitly specified" == str(e.value))
 
 
@@ -289,7 +290,7 @@ def test_create_from_dict():
 def test_create_from_dict_error():
     with pytest.raises(TypeError) as e:
         dt.Frame({"A": range(3), "B": list('abc')}, names=("x", "y"))
-    assert ("Parameter `names` cannot be used when constructing a Frame from "
+    assert ("Parameter names cannot be used when constructing a Frame from "
             "a dictionary" == str(e.value))
 
 
@@ -326,9 +327,42 @@ def test_create_from_kwargs2():
 def test_create_from_kwargs_error():
     with pytest.raises(TypeError) as e:
         dt.Frame(A=range(3), B=list('abc'), names=("x", "y"))
-    assert ("Parameter `names` cannot be used when constructing a Frame from "
+    assert ("Parameter names cannot be used when constructing a Frame from "
             "varkwd arguments" == str(e.value))
 
+
+
+
+#-------------------------------------------------------------------------------
+# Create from a typed list
+#-------------------------------------------------------------------------------
+
+def test_create_from_typed_list():
+    DT = dt.Frame([1, 2, 3] / dt.int16)
+    assert DT.stype == dt.int16
+    assert DT.to_list() == [[1, 2, 3]]
+    frame_integrity_check(DT)
+
+
+def test_create_from_typed_list2():
+    DT = dt.Frame([[1, 2, 3] / dt.int64,
+                   [1, 2, 3] / dt.float64])
+    assert DT.stypes == (dt.int64, dt.float64)
+    assert DT.to_list() == [[1, 2, 3]] * 2
+    frame_integrity_check(DT)
+
+
+def test_create_from_typed_list3():
+    DT = dt.Frame(A=[1, 2, 3] / dt.str32,
+                  B=[1, 2, 3] / dt.bool8,
+                  C=[1, 2, 3] / dt.float64)
+    assert_equals(DT, dt.Frame(A=["1", "2", "3"], B=[True, True, True],
+                               C=[1.0, 2.0, 3.0]))
+
+
+def test_create_from_typed_list4():
+    DT = dt.Frame({"A": [1, 2, 3] / dt.int8})
+    assert_equals(DT, dt.Frame([1, 2, 3], names=["A"], stypes=[dt.int8]))
 
 
 
@@ -368,7 +402,7 @@ def test_create_from_frame_error():
     frame_integrity_check(d0)
     with pytest.raises(TypeError) as e1:
         dt.Frame(d0, stypes=[stype.int64, stype.float64, stype.str64])
-    assert ("Parameter `stypes` is not allowed when making a copy of a "
+    assert ("Parameter stypes is not allowed when making a copy of a "
             "Frame" == str(e1.value))
     with pytest.raises(TypeError) as e2:
         dt.Frame(d0, stypes=[stype.str32])
@@ -475,12 +509,12 @@ def test_create_from_list_of_tuples_bad():
 
     with pytest.raises(ValueError) as e:
         dt.Frame([(1, 2, 3)], names=["a", "b"])
-    assert ("The `names` argument contains 2 elements, which is less than "
+    assert ("The names argument contains 2 elements, which is less than "
             "the number of columns being created (3)" == str(e.value))
 
     with pytest.raises(ValueError) as e:
         dt.Frame([(1, 2, 3)], stypes=(stype.float32,) * 10)
-    assert ("The `stypes` argument contains 10 elements, which is more than "
+    assert ("The stypes argument contains 10 elements, which is more than "
             "the number of columns being created (3)" == str(e.value))
 
 
@@ -584,8 +618,8 @@ def test_create_from_list_of_dicts_bad2():
 def test_create_from_list_of_dicts_bad3():
     with pytest.raises(TypeError) as e:
         dt.Frame([{"a": 11}, {"b": 4}], stypes=[int, int])
-    assert ("If the Frame() source is a list of dicts, then either the `names` "
-            "list has to be provided explicitly, or `stypes` parameter has "
+    assert ("If the Frame() source is a list of dicts, then either the names "
+            "list has to be provided explicitly, or stypes parameter has "
             "to be a dictionary (or missing)" == str(e.value))
 
 
@@ -727,6 +761,13 @@ def test_auto_str64():
     assert d0.stypes == (stype.str64,)
 
 
+def test_create_large_string_column():
+    s = 'a' * (1 << 20)
+    DT = dt.Frame([s] * (1 << 12))
+    frame_integrity_check(DT)
+    assert DT.stype == dt.str64
+    assert DT[-1, 0] == s
+
 
 
 #-------------------------------------------------------------------------------
@@ -831,28 +872,28 @@ def test_create_names0():
 def test_create_names_bad1():
     with pytest.raises(ValueError) as e:
         dt.Frame(range(10), names=["a", "b"])
-    assert ("The `names` argument contains 2 elements, which is more than the "
+    assert ("The names argument contains 2 elements, which is more than the "
             "number of columns being created (1)" == str(e.value))
 
 
 def test_create_names_bad2():
     with pytest.raises(TypeError) as e:
         dt.Frame([[1], [2], [3]], names="xyz")
-    assert ("Argument `names` in Frame() constructor should be a list of "
+    assert ("Argument names in Frame() constructor should be a list of "
             "strings, instead received <class 'str'>" == str(e.value))
 
 
 def test_create_names_bad3():
     with pytest.raises(TypeError) as e:
         dt.Frame(range(5), names={"x": 1})
-    assert ("Argument `names` in Frame() constructor should be a list of "
+    assert ("Argument names in Frame() constructor should be a list of "
             "strings, instead received <class 'dict'>" == str(e.value))
 
 
 def test_create_names_bad4():
     with pytest.raises(TypeError) as e:
         dt.Frame(range(5), names=[3])
-    assert ("Invalid `names` list: element 0 is not a string"
+    assert ("Invalid names list: element 0 is not a string"
             in str(e.value))
 
 
@@ -936,7 +977,7 @@ def test_create_from_pandas_with_stypes(pandas):
     with pytest.raises(TypeError) as e:
         p = pandas.DataFrame([[1, 2, 3]])
         dt.Frame(p, stype=str)
-    assert ("Argument `stypes` is not supported in Frame() constructor "
+    assert ("Argument stypes is not supported in Frame() constructor "
             "when creating a Frame from pandas DataFrame" == str(e.value))
 
 
@@ -944,7 +985,7 @@ def test_create_from_pandas_with_bad_names(pandas):
     with pytest.raises(ValueError) as e:
         p = pandas.DataFrame([[1, 2, 3]])
         dt.Frame(p, names=["A", "Z"])
-    assert ("The `names` argument contains 2 elements, which is less than the "
+    assert ("The names argument contains 2 elements, which is less than the "
             "number of columns being created (3)" == str(e.value))
 
 

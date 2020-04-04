@@ -89,6 +89,8 @@ GenericReader::GenericReader()
   eof = nullptr;
   line = 0;
   cr_is_newline = 0;
+  multisource_strategy = FreadMultiSourceStrategy::Warn;
+  errors_strategy = IreadErrorHandlingStrategy::Error;
 }
 
 
@@ -102,11 +104,15 @@ GenericReader::GenericReader(const GenericReader& g)
   dec              = g.dec;
   quote            = g.quote;
   max_nrows        = g.max_nrows;
-  skip_to_line     = 0;  // this parameter was already applied
+  multisource_strategy = g.multisource_strategy;
+  errors_strategy  = g.errors_strategy;
+  skip_to_line     = g.skip_to_line;
   na_strings       = g.na_strings;
   header           = g.header;
   strip_whitespace = g.strip_whitespace;
   skip_blank_lines = g.skip_blank_lines;
+  skip_to_string   = g.skip_to_string;
+  skip_to_line     = g.skip_to_line;
   fill             = g.fill;
   blank_is_na      = g.blank_is_na;
   number_is_na     = g.number_is_na;
@@ -230,6 +236,29 @@ void GenericReader::init_header(const py::Arg& arg) {
   } else {
     header = arg.to_bool_strict();
     trace("header = %s", header? "True" : "False");
+  }
+}
+
+void GenericReader::init_multisource(const py::Arg& arg) {
+  auto str = arg.to<std::string>("");
+  if (str == "")            multisource_strategy = FreadMultiSourceStrategy::Warn;
+  else if (str == "warn")   multisource_strategy = FreadMultiSourceStrategy::Warn;
+  else if (str == "error")  multisource_strategy = FreadMultiSourceStrategy::Error;
+  else if (str == "ignore") multisource_strategy = FreadMultiSourceStrategy::Ignore;
+  else {
+    throw ValueError() << arg.name() << " got invalid value " << str;
+  }
+}
+
+void GenericReader::init_errors(const py::Arg& arg) {
+  auto str = arg.to<std::string>("");
+  if (str == "")            errors_strategy = IreadErrorHandlingStrategy::Warn;
+  else if (str == "warn")   errors_strategy = IreadErrorHandlingStrategy::Warn;
+  else if (str == "raise")  errors_strategy = IreadErrorHandlingStrategy::Error;
+  else if (str == "ignore") errors_strategy = IreadErrorHandlingStrategy::Ignore;
+  else if (str == "store")  errors_strategy = IreadErrorHandlingStrategy::Store;
+  else {
+    throw ValueError() << arg.name() << " got invalid value " << str;
   }
 }
 
@@ -376,7 +405,7 @@ py::oobj GenericReader::read_all(py::robj pysources)
   }
 
   if (!output_) {
-    throw RuntimeError() << "Unable to read input " << src_arg.to_string();
+    throw IOError() << "Unable to read input " << src_arg.to_string();
   }
 
   job->done();
@@ -407,7 +436,7 @@ py::oobj GenericReader::read_buffer(const Buffer& buf, size_t extra_byte)
   }
 
   if (!output_) {
-    throw RuntimeError() << "Unable to read input " << src_arg.to_string();
+    throw IOError() << "Unable to read input " << src_arg.to_string();
   }
 
   job->done();
@@ -615,42 +644,28 @@ void GenericReader::open_input() {
   double t0 = wallclock();
   CString text;
   const char* filename = nullptr;
-  size_t extra_byte = 0;
   if (fileno > 0) {
     const char* src = src_arg.to_cstring().ch;
-    input_mbuf = Buffer::overmap(src, /* extra = */ 1, fileno);
+    input_mbuf = Buffer::mmap(src, 0, fileno, false);
     size_t sz = input_mbuf.size();
-    if (sz > 0) {
-      sz--;
-      static_cast<char*>(input_mbuf.wptr())[sz] = '\0';
-      extra_byte = 1;
-    }
     trace("Using file %s opened at fd=%d; size = %zu", src, fileno, sz);
 
   } else if ((text = text_arg.to_cstring())) {
     size_t size = static_cast<size_t>(text.size);
     input_mbuf = Buffer::external(text.ch, size + 1);
-    extra_byte = 1;
     input_is_string = true;
 
   } else if ((filename = file_arg.to_cstring().ch)) {
-    input_mbuf = Buffer::overmap(filename, /* extra = */ 1);
+    input_mbuf = Buffer::mmap(filename);
     size_t sz = input_mbuf.size();
-    if (sz > 0) {
-      sz--;
-      static_cast<char*>(input_mbuf.xptr())[sz] = '\0';
-      extra_byte = 1;
-    }
     trace("File \"%s\" opened, size: %zu", filename, sz);
 
   } else {
-    throw RuntimeError() << "No input given to the GenericReader";
+    throw IOError() << "No input given to the GenericReader";
   }
   line = 1;
-  sof = static_cast<char*>(input_mbuf.wptr());
-  eof = sof + input_mbuf.size() - extra_byte;
-  if (eof) xassert(*eof == '\0');
-
+  sof = static_cast<const char*>(input_mbuf.rptr());
+  eof = sof + input_mbuf.size();
   if (verbose) {
     trace("==== file sample ====");
     const char* ch = sof;
@@ -812,8 +827,8 @@ void GenericReader::skip_to_line_with_string() {
         ch++;
       }
     }
-    if (*ch=='\n' || *ch=='\r') {
-      ch += 1 + (ch+1 < eof && *ch + ch[1] == '\n' + '\r');
+    if (ch < eof && (*ch=='\n' || *ch=='\r')) {
+      ch += 1 + ((ch + 1 < eof) && *ch + ch[1] == '\n' + '\r');
       line_start = ch;
       line++;
     } else {
@@ -847,13 +862,13 @@ bool GenericReader::detect_improper_files() {
   // --- detect HTML ---
   while (ch < eof && (*ch==' ' || *ch=='\t')) ch++;
   if (ch + 15 < eof && std::memcmp(ch, "<!DOCTYPE html>", 15) == 0) {
-    throw RuntimeError() << src_arg.to_string() << " is an HTML file. Please "
+    throw IOError() << src_arg.to_string() << " is an HTML file. Please "
         << "open it in a browser and then save in a plain text format.";
   }
   // --- detect Feather ---
   if (sof + 8 < eof && std::memcmp(sof, "FEA1", 4) == 0
                     && std::memcmp(eof - 4, "FEA1", 4) == 0) {
-    throw RuntimeError() << src_arg.to_string() << " is a feather file, it "
+    throw IOError() << src_arg.to_string() << " is a feather file, it "
         "cannot be read with fread.";
   }
   return false;

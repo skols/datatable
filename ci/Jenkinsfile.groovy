@@ -107,18 +107,22 @@ ansiColor('xterm') {
                 dir (stageDir) {
                     buildSummary.stageWithSummary('Checkout and Setup Env', stageDir) {
                         deleteDir()
-                        def scmEnv = checkout scm
+
+                        sh "git clone https://github.com/h2oai/datatable.git ."
+
+                        if (env.CHANGE_BRANCH) {
+                            sh "git checkout ${env.CHANGE_BRANCH}"
+                        }
+
                         sh """
                             set +x
                             echo 'env.BRANCH_NAME   = ${env.BRANCH_NAME}'
+                            echo 'env.BUILD_ID      = ${env.BUILD_ID}'
                             echo 'env.CHANGE_BRANCH = ${env.CHANGE_BRANCH}'
                             echo 'env.CHANGE_ID     = ${env.CHANGE_ID}'
                             echo 'env.CHANGE_TARGET = ${env.CHANGE_TARGET}'
                             echo 'env.CHANGE_SOURCE = ${env.CHANGE_SOURCE}'
                             echo 'env.CHANGE_FORK   = ${env.CHANGE_FORK}'
-                            echo 'scm.GIT_BRANCH    = ${scmEnv.GIT_BRANCH}'
-                            echo 'scm.CHANGE_BRANCH = ${scmEnv.CHANGE_BRANCH}'
-                            echo 'scm.CHANGE_SOURCE = ${scmEnv.CHANGE_SOURCE}'
                             echo 'isMasterJob  = ${isMasterJob}'
                             echo 'doPpcBuild   = ${doPpcBuild}'
                             echo 'doExtraTests = ${doExtraTests}'
@@ -126,8 +130,6 @@ ansiColor('xterm') {
                             echo 'doPpcTests   = ${doPpcTests}'
                             echo 'doCoverage   = ${doCoverage}'
                         """
-
-                        env.BRANCH_NAME = scmEnv.GIT_BRANCH.replaceAll('origin/', '').replaceAll('/', '-')
 
                         if (doPpcBuild) {
                             manager.addBadge("success.gif", "PPC64LE build triggered.")
@@ -138,14 +140,23 @@ ansiColor('xterm') {
 
                         buildInfo(env.BRANCH_NAME, isRelease())
 
+
+
                         if (isRelease()) {
                             DT_RELEASE = 'True'
                         }
                         else if (env.BRANCH_NAME == 'master') {
-                            DT_BUILD_NUMBER = env.BUILD_ID
+                            DT_BUILD_NUMBER = sh(
+                              script: "git rev-list --count master",
+                              returnStdout: true
+                            ).trim()
                         }
                         else {
-                            DT_BUILD_SUFFIX = env.BRANCH_NAME.replaceAll('[^\\w]+', '') + "." + env.BUILD_ID
+                            def BRANCH_BUILD_ID = sh(script:
+                              "git rev-list --count master..",
+                              returnStdout: true
+                            ).trim()
+                            DT_BUILD_SUFFIX = env.BRANCH_NAME.replaceAll('[^\\w]+', '') + "." + BRANCH_BUILD_ID
                         }
 
                         sh """
@@ -258,13 +269,6 @@ ansiColor('xterm') {
                                 cleanWs()
                                 dumpInfo()
 
-                                // "sed" line below applies patch https://github.com/pypa/auditwheel/pull/213
-                                // It can be removed when the PR is merged and new ppc64le image is available
-                                // Since it modifies the file owned by root, we cannot use the standard
-                                // approach of starting docker under the jenkins user. Instead, we start as
-                                // a root, modify the file, then create the jenkins user with the correct
-                                // uid/gid, and finally switch to that user's context.
-                                //
                                 dir(stageDir) {
                                     unstash 'datatable-sources'
                                     sh """
@@ -278,7 +282,6 @@ ansiColor('xterm') {
                                             -c "cd /dot && \
                                                 ls -la && \
                                                 ls -la src/datatable && \
-                                                sed -i \\\"s/if 'ld-linux' in lib:/if 'ld-linux' in lib or 'ld64.so' in lib:/\\\" /opt/_internal/cpython-3.7.6/lib/python3.7/site-packages/auditwheel/policy/external_references.py && \
                                                 groupadd -g `id -g` jenkins && \
                                                 useradd -u `id -u` -g jenkins jenkins && \
                                                 su jenkins && \
@@ -636,6 +639,7 @@ def test_in_docker(String testtag, String pyver, String docker_image) {
             // binary wheels for pandas & numpy.
             pip_args += "-i https://h2oai.github.io/py-repo/ "
             pip_args += "--extra-index-url https://pypi.org/simple/ "
+            pip_args += "--prefer-binary "
         }
         def python = get_python_for_docker(pyver, docker_image)
         def docker_cmd = ""

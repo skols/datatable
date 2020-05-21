@@ -20,28 +20,25 @@
 // IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include "csv/reader_fread.h"      // FreadReader
-#include "encodings.h"             // check_escaped_string, decode_escaped_csv_string
-#include "py_encodings.h"          // decode_win1252
 #include "read/fread/fread_thread_context.h"
 #include "read/parallel_reader.h"  // ChunkCoordinates
 #include "utils/misc.h"            // wallclock
-
+#include "encodings.h"             // check_escaped_string, decode_escaped_csv_string
+#include "py_encodings.h"          // decode_win1252
 namespace dt {
 namespace read {
 
 
 
 FreadThreadContext::FreadThreadContext(
-    size_t bcols, size_t brows, FreadReader& f, PT* types_,
-    dt::shared_mutex& mut
-  ) : ThreadContext(bcols, brows),
+    size_t bcols, size_t brows, FreadReader& f, PT* types_
+  ) : ThreadContext(bcols, brows, f.preframe),
       types(types_),
       freader(f),
-      preframe(f.preframe),
-      shmutex(mut),
-      tokenizer(f.makeTokenizer(tbuf.data(), nullptr)),
+      tokenizer(f.makeTokenizer()),
       parsers(ParserLibrary::get_parser_fns())
 {
+  tokenizer.target = tbuf.data();
   ttime_push = 0;
   ttime_read = 0;
   anchor = nullptr;
@@ -70,7 +67,7 @@ void FreadThreadContext::read_chunk(
   actual_cc.set_start_exact(cc.get_start());
   actual_cc.set_end_exact(nullptr);
 
-  size_t ncols = preframe.ncols();
+  size_t ncols = preframe_.ncols();
   bool fillme = fill || (ncols==1 && !skipEmptyLines);
   bool fastParsingAllowed = (sep != ' ') && !numbersMayBeNAs;
   const char*& tch = tokenizer.ch;
@@ -95,7 +92,7 @@ void FreadThreadContext::read_chunk(
         fieldStart = tch;
         parsers[types[j]](tokenizer);
         if (tch >= tokenizer.eof || *tch != sep) break;
-        tokenizer.target += preframe.column(j).is_in_buffer();
+        tokenizer.target += preframe_.column(j).is_in_buffer();
         tch++;
         j++;
       }
@@ -107,7 +104,7 @@ void FreadThreadContext::read_chunk(
         tch = tlineStart;  // in case white space at the beginning may need to be included in field
       }
       else if (tokenizer.skip_eol() && j < ncols) {
-        tokenizer.target += preframe.column(j).is_in_buffer();
+        tokenizer.target += preframe_.column(j).is_in_buffer();
         j++;
         if (j==ncols) { used_nrows++; continue; }  // next line
         tch--;
@@ -128,7 +125,7 @@ void FreadThreadContext::read_chunk(
     if (fillme || (tch == tokenizer.eof || (*tch!='\n' && *tch!='\r'))) {  // also includes the case when sep==' '
       while (j < ncols) {
         fieldStart = tch;
-        auto ptype_iter = preframe.column(j).get_ptype_iterator(&tokenizer.quoteRule);
+        auto ptype_iter = preframe_.column(j).get_ptype_iterator(&tokenizer.quoteRule);
 
         while (true) {
           tch = fieldStart;
@@ -171,7 +168,7 @@ void FreadThreadContext::read_chunk(
         // Type-bump. This may only happen if cc.is_start_exact() is true, which
         // is can only happen to one thread at a time. Thus, there is no need
         // for "critical" section here.
-        auto& colj = preframe.column(j);
+        auto& colj = preframe_.column(j);
         if (ptype_iter.has_incremented()) {
           xassert(cc.is_start_exact());
           if (verbose) {
@@ -180,7 +177,7 @@ void FreadThreadContext::read_chunk(
                                       static_cast<int64_t>(row0 + used_nrows));
           }
           types[j] = *ptype_iter;
-          colj.set_ptype(ptype_iter);
+          colj.set_ptype(types[j]);
           if (!freader.reread_scheduled) {
             freader.reread_scheduled = true;
             freader.job->add_work_amount(GenericReader::WORK_REREAD);
@@ -212,7 +209,7 @@ void FreadThreadContext::read_chunk(
         while (tokenizer.skip_eol()) {
           tokenizer.skip_whitespace();
         }
-        if (tokenizer.at_eof()) break;
+        if (tokenizer.ch == tokenizer.eof) break;
       }
 
       // not enough columns observed (including empty line). If fill==true,
@@ -256,8 +253,8 @@ void FreadThreadContext::postprocess() {
   uint8_t echar = quoteRule == 0? static_cast<uint8_t>(quote) :
                   quoteRule == 1? '\\' : 0xFF;
   uint32_t output_offset = 0;
-  for (size_t i = 0, j = 0; i < preframe.ncols(); ++i) {
-    auto& col = preframe.column(i);
+  for (size_t i = 0, j = 0; i < preframe_.ncols(); ++i) {
+    auto& col = preframe_.column(i);
     if (!col.is_in_buffer()) continue;
     if (col.is_string() && !col.is_type_bumped()) {
       strinfo[j].start = output_offset;
@@ -308,100 +305,11 @@ void FreadThreadContext::postprocess() {
 }
 
 
-void FreadThreadContext::orderBuffer() {
-  if (!used_nrows) return;
-  size_t j = 0;
-  for (auto& col : preframe) {
-    if (!col.is_in_buffer()) continue;
-    if (col.is_string() && !col.is_type_bumped()) {
-      // Compute the size of the string content in the buffer `sz` from the
-      // offset of the last element. This quantity cannot be calculated in the
-      // postprocess() step, since `used_nrows` may some times change affecting
-      // this size after the post-processing.
-      uint32_t offset0 = static_cast<uint32_t>(strinfo[j].start);
-      uint32_t offsetL = tbuf[j + tbuf_ncols * (used_nrows - 1)].str32.offset;
-      size_t sz = (offsetL - offset0) & ~GETNA<uint32_t>();
-      strinfo[j].size = sz;
-
-      WritableBuffer* wb = col.strdata_w();
-      size_t write_at = wb->prep_write(sz, sbuf.data() + offset0);
-      strinfo[j].write_at = write_at;
-    }
-    ++j;
-  }
-}
 
 
 void FreadThreadContext::push_buffers() {
-  // If the buffer is empty, then there's nothing to do...
-  if (!used_nrows) return;
-  dt::shared_lock<dt::shared_mutex> lock(shmutex);
-
   double t0 = verbose? wallclock() : 0;
-  size_t j = 0;
-  for (auto& col : preframe) {
-    if (!col.is_in_buffer()) continue;
-    void* data = col.data_w();
-    int8_t elemsize = static_cast<int8_t>(col.elemsize());
-
-    if (col.is_type_bumped()) {
-      // do nothing: the column was not properly allocated for its type, so
-      // any attempt to write the data may fail with data corruption
-    } else if (col.is_string()) {
-      WritableBuffer* wb = col.strdata_w();
-      SInfo& si = strinfo[j];
-      field64* lo = tbuf.data() + j;
-
-      wb->write_at(si.write_at, si.size, sbuf.data() + si.start);
-
-      if (elemsize == 4) {
-        uint32_t* dest = static_cast<uint32_t*>(data) + row0 + 1;
-        uint32_t delta = static_cast<uint32_t>(si.write_at - si.start);
-        for (size_t n = 0; n < used_nrows; ++n) {
-          uint32_t soff = lo->str32.offset;
-          *dest++ = soff + delta;
-          lo += tbuf_ncols;
-        }
-      } else {
-        uint64_t* dest = static_cast<uint64_t*>(data) + row0 + 1;
-        uint64_t delta = static_cast<uint64_t>(si.write_at - si.start);
-        for (size_t n = 0; n < used_nrows; ++n) {
-          uint64_t soff = lo->str32.offset;
-          *dest++ = soff + delta;
-          lo += tbuf_ncols;
-        }
-      }
-
-    } else {
-      const field64* src = tbuf.data() + j;
-      if (elemsize == 8) {
-        uint64_t* dest = static_cast<uint64_t*>(data) + row0;
-        for (size_t r = 0; r < used_nrows; r++) {
-          *dest = src->uint64;
-          src += tbuf_ncols;
-          dest++;
-        }
-      } else
-      if (elemsize == 4) {
-        uint32_t* dest = static_cast<uint32_t*>(data) + row0;
-        for (size_t r = 0; r < used_nrows; r++) {
-          *dest = src->uint32;
-          src += tbuf_ncols;
-          dest++;
-        }
-      } else
-      if (elemsize == 1) {
-        uint8_t* dest = static_cast<uint8_t*>(data) + row0;
-        for (size_t r = 0; r < used_nrows; r++) {
-          *dest = src->uint8;
-          src += tbuf_ncols;
-          dest++;
-        }
-      }
-    }
-    j++;
-  }
-  used_nrows = 0;
+  ThreadContext::push_buffers();
   if (verbose) ttime_push += wallclock() - t0;
 }
 

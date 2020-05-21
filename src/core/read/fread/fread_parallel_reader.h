@@ -13,7 +13,7 @@
 #include "_dt.h"
 
 class FreadReader;
-struct FreadTokenizer;
+struct ParseContext;
 
 namespace dt {
 namespace read {
@@ -36,7 +36,7 @@ class FreadParallelReader : public ParallelReader {
     virtual std::unique_ptr<ThreadContext> init_thread_context() override;
 
     virtual void adjust_chunk_coordinates(
-      ChunkCoordinates& cc, ThreadContextPtr& ctx) const override;
+      ChunkCoordinates& cc, ThreadContext* ctx) const override;
 };
 
 

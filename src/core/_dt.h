@@ -26,14 +26,17 @@
 #include <string>
 #include <vector>
 
-typedef struct _object PyObject;
+typedef struct _object     PyObject;
+typedef struct _typeobject PyTypeObject;
 
 class Buffer;
 class Column;
 class DataTable;
 class Groupby;
+class MemoryWritableBuffer;
 class RowIndex;
 class Stats;
+class TemporaryFile;
 class WritableBuffer;
 
 struct CString;
@@ -73,6 +76,7 @@ namespace py {
   class rdict;
   class robj;
   class rtuple;
+  class _obj;
 }
 
 
@@ -86,6 +90,7 @@ namespace jay {
   struct Frame;
   struct Column;
   struct Buffer;
+  struct ColumnBuilder;
 }
 
 
@@ -95,11 +100,18 @@ namespace read {
   enum RT : uint8_t;
   enum BT : uint8_t;
 
-  struct FreadTokenizer;
+  struct ParseContext;
+  union field64;
+
+  class ChunkCoordinates;
   class GenericReader;
-  class PreColumn;
+  class OutputColumn;
+  class InputColumn;
   class PreFrame;
+  class ThreadContext;
 }}
+class FreadReader;
+void parse_string(dt::read::ParseContext&);
 
 
 #endif

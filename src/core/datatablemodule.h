@@ -16,7 +16,6 @@
 #ifndef dt_DATATABLEMODULE_h
 #define dt_DATATABLEMODULE_h
 #include "python/ext_module.h"
-#include "utils/c+++.h"
 
 namespace py {
 
@@ -60,7 +59,7 @@ class DatatableModule : public ExtModule<DatatableModule> {
 }  // namespace py
 
 
-#if DTDEBUG
+#if DT_DEBUG
   void TRACK(void* ptr, size_t size, const char* name);
   void UNTRACK(void* ptr);
   bool IS_TRACKED(void* ptr);

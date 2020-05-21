@@ -115,7 +115,10 @@ char* writable_string_col::buffer_impl<T>::strbuf_ptr() const {
 template <typename T>
 void writable_string_col::buffer_impl<T>::write(const char* ch, size_t len) {
   if (ch) {
-    if (sizeof(T) == 4) xassert(len <= Column::MAX_ARR32_SIZE);
+    if (sizeof(T) == 4) {
+      xassert(len <= Column::MAX_ARR32_SIZE);
+    }
+
     strbuf.ensuresize(strbuf_used + len);
     std::memcpy(strbuf_ptr() + strbuf_used, ch, len);
     strbuf_used += len;
@@ -129,7 +132,7 @@ void writable_string_col::buffer_impl<T>::write(const char* ch, size_t len) {
 
 template <typename T>
 void writable_string_col::buffer_impl<T>::order() {
-  strbuf_write_pos = col.strdata.prep_write(strbuf_used, strbuf_ptr());
+  strbuf_write_pos = col.strdata.prepare_write(strbuf_used, strbuf_ptr());
 }
 
 
@@ -138,7 +141,7 @@ void writable_string_col::buffer_impl<T>::commit_and_start_new_chunk(size_t i0)
 {
   col.strdata.write_at(strbuf_write_pos, strbuf_used, strbuf_ptr());
   for (T* p = offptr0; p < offptr; ++p) {
-    *p += strbuf_write_pos;
+    *p += static_cast<T>(strbuf_write_pos);
   }
   offptr = static_cast<T*>(col.offdata.xptr()) + i0 + 1;
   offptr0 = offptr;

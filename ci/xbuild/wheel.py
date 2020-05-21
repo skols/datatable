@@ -443,24 +443,32 @@ class Wheel:
         return "cp" + str(major) + str(minor)
 
     def _get_abi_tag(self):
-        try:
-            soabi = sysconfig.get_config_var("SOABI")
-            # soabi = "cpython-38m"  # datatable environment
-            # soabi = "cpython-37m" # data_analysis environment
+        """
+        Return the ABI tag if available, otherwise just emulate it.
+        Adopted from pypa/wheel, see https://github.com/pypa/wheel/blob/a51977075740fda01b2c0e983a79bfe753567219/src/wheel/bdist_wheel.py#L67
+        """
+
+        def get_flag(var, fallback):
+            val = sysconfig.get_config_var(var)
+            if val is None:
+                self.log.report_abi_variable_missing(var)
+                return fallback
+            return val
+
+        soabi = sysconfig.get_config_var('SOABI')
+        if soabi:
             parts = soabi.split("-")
             assert parts[0] == "cpython"
-            return "cp" + parts[1]
-        except Exception as e:
-            print(e)
-            pass
+            abi = 'cp' + parts[1]
+        else:
+            abi = self._get_python_tag()
+            if get_flag('Py_DEBUG', hasattr(sys, 'gettotalrefcount')):
+                abi += 'd'
+            if sys.version_info < (3, 8) and get_flag('WITH_PYMALLOC', True):
+                abi += 'm'
 
-        impl = self._pep425_implementation()
-        suffix = ''
-        if impl == 'cp':
-            suffix += 'm'
-        if sys.maxunicode == 0x10ffff and sys.version_info < (3, 3):
-            suffix += 'u'
-        return '%s%s%s' % (impl, ''.join(map(str_cls, self._pep425_version())), suffix)
+        return abi
+
 
     def get_tag(self):
         if self._tag is None:

@@ -38,6 +38,7 @@ class Logger0:
     def cmd_wheel(self): pass
 
     def report_abi_mismatch(self, v1, v2): pass
+    def report_abi_variable_missing(self, v): pass
     def report_added_file_to_sdist(self, filename, size): pass
     def report_added_file_to_wheel(self, filename, size): pass
     def report_build_dir(self, dd): pass
@@ -151,6 +152,7 @@ class Logger1(Logger0):
             ch_future = sz - ch_queued - ch_done
             line += " [%s\x1B[1;97m%s\x1B[0;90m%s]" \
                     % ("#" * ch_done, "#" * ch_queued, "." * ch_future)
+            line += " %d/%d" % (self._n_finished, self._n_total)
         line += "\x1B[m\x1B[K"  # clear the rest of the line
         print(line, end="", flush=True)
 
@@ -243,6 +245,10 @@ class Logger3(Logger0):
     def report_abi_mismatch(self, v1, v2):
         self.info("Config file contains abi=`%s`, whereas current abi is `%s`"
                   % (v1, v2))
+
+    def report_abi_variable_missing(self, v):
+        self.info("Config variable `%s` is missing, ABI tag may be incorrect"
+                  % v)
 
     def report_added_file_to_sdist(self, filename, size):
         self.info("Added file `%s` of size %d" % (filename, size))

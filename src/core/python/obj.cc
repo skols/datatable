@@ -20,7 +20,7 @@
 // IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include <iostream>
-#include <cstdint>         // INT32_MAX
+#include <cstdint>            // INT32_MAX
 #include "expr/py_by.h"       // py::oby
 #include "expr/py_join.h"     // py::ojoin
 #include "expr/py_sort.h"     // py::osort
@@ -33,6 +33,7 @@
 #include "utils/macros.h"
 
 namespace py {
+static PyObject* pandas_Categorical_type = nullptr;
 static PyObject* pandas_DataFrame_type = nullptr;
 static PyObject* pandas_Series_type = nullptr;
 static PyObject* numpy_Array_type = nullptr;
@@ -51,7 +52,7 @@ static void init_numpy();
 PyObject* Expr_Type = nullptr;
 
 // `_Py_static_string_init` invoked by the `_Py_IDENTIFIER` uses
-// a designated initializer, that is not supported by the C++11 standard.
+// a designated initializer, that is not supported by the C++14 standard.
 // Redefine `_Py_static_string_init` here to use a regular initializer.
 #undef _Py_static_string_init
 #define _Py_static_string_init(value) { NULL, value, NULL }
@@ -234,6 +235,12 @@ bool _obj::is_sort_node() const noexcept {
 
 bool _obj::is_update_node() const noexcept {
   return py::oupdate::check(v);
+}
+
+bool _obj::is_pandas_categorical() const noexcept {
+  if (!pandas_Categorical_type) init_pandas();
+  if (!v || !pandas_Categorical_type) return false;
+  return PyObject_IsInstance(v, pandas_Categorical_type);
 }
 
 bool _obj::is_pandas_frame() const noexcept {
@@ -713,7 +720,7 @@ char** _obj::to_cstringlist(const error_manager&) const {
     Py_ssize_t count = Py_SIZE(v);
     char** res = nullptr;
     try {
-      res = new char*[count + 1]();
+      res = new char*[static_cast<size_t>(count + 1)]();
       for (Py_ssize_t i = 0; i <= count; ++i) res[i] = nullptr;
       for (Py_ssize_t i = 0; i < count; ++i) {
         PyObject* item = islist? PyList_GET_ITEM(v, i)
@@ -1043,8 +1050,9 @@ oobj get_module(const char* modname) {
 static void init_pandas() {
   py::oobj pd = get_module("pandas");
   if (pd) {
-    pandas_DataFrame_type = pd.get_attr("DataFrame").release();
-    pandas_Series_type    = pd.get_attr("Series").release();
+    pandas_Categorical_type = pd.get_attr("Categorical").release();
+    pandas_DataFrame_type   = pd.get_attr("DataFrame").release();
+    pandas_Series_type      = pd.get_attr("Series").release();
   }
 }
 

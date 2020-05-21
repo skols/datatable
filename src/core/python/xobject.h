@@ -21,6 +21,7 @@
 #include "python/args.h"
 #include "python/obj.h"
 #include "utils/assert.h"
+#include "utils/macros.h"
 namespace py {
 
 
@@ -54,6 +55,7 @@ class XTypeMaker {
     static struct BuffersTag {} buffers_tag;
     static struct IterTag {} iter_tag;
     static struct NextTag {} next_tag;
+    static struct CallTag {} call_tag;
 
     XTypeMaker(PyTypeObject* t, size_t objsize);
     void attach_to_module(PyObject* module);
@@ -104,6 +106,9 @@ class XTypeMaker {
 
     // iternextfunc = PyObject*(*)(PyObject*)
     void add(iternextfunc _next, NextTag);
+
+    // ternaryfunc = PyObject*(*)(PyObject*, PyObject*, PyObject*)
+    void add(ternaryfunc meth, CallTag);
 
   private:
     PyGetSetDef* finalize_getsets();
@@ -158,10 +163,13 @@ template <typename Derived>
 struct XObject : public PyObject {
   static PyTypeObject type;
 
-  static void init_type(PyObject* module) {
+  static void init_type(PyObject* module = nullptr) {
+    static bool initalized = false;
+    if (initalized) return;
     XTypeMaker xt(&type, sizeof(Derived));
     Derived::impl_init_type(xt);
     xt.attach_to_module(module);
+    initalized = true;
   }
 
   static bool check(PyObject* v) {
@@ -387,7 +395,7 @@ int _call_setter(void(T::*fn)(const Arg&), Arg& ARG,
 // Helper macros
 //------------------------------------------------------------------------------
 
-#if defined(__clang__)
+#if DT_COMPILER_CLANG
   #pragma clang diagnostic push
   #pragma clang diagnostic ignored "-Wunused-template"
 #endif
@@ -400,7 +408,7 @@ static T _class_of_impl(R(T::*)(Args...) const);
 
 #define CLASS_OF(METH) decltype(_class_of_impl(METH))
 
-#if defined(__clang__)
+#if DT_COMPILER_CLANG
   #pragma clang diagnostic pop
 #endif
 
@@ -412,7 +420,7 @@ static T _class_of_impl(R(T::*)(Args...) const);
 
 
 #define DESTRUCTOR(METH)                                                       \
-    _safe_dealloc<CLASS_OF(METH), METH>, py::XTypeMaker::destructor_tag
+    py::_safe_dealloc<CLASS_OF(METH), METH>, py::XTypeMaker::destructor_tag
 
 
 #define GETTER(GETFN, ARGS)                                                    \
@@ -478,6 +486,12 @@ static T _class_of_impl(R(T::*)(Args...) const);
 
 #define METHOD__LENGTH_HINT__(METH)                                            \
     METHOD0(METH, "__length_hint__")
+
+
+#define METHOD__CALL__(METH, ARGS)                                             \
+    [](PyObject* self, PyObject* args, PyObject* kwds) noexcept -> PyObject* { \
+      return _call_method(METH, ARGS, self, args, kwds);                       \
+    }, py::XTypeMaker::call_tag
 
 
 } // namespace py

@@ -58,8 +58,8 @@ void write_manager::set_strategy(WritableBuffer::Strategy strategy_) {
   strategy = strategy_;
 }
 
-void write_manager::set_logger(py::oobj logger) {
-  chronicler.set_logger(std::move(logger));
+void write_manager::set_verbose(bool f) {
+  chronicler.set_verbose(f);
 }
 
 void write_manager::set_usehex(bool f) {
@@ -146,7 +146,7 @@ void write_manager::write_rows()
         [&](size_t) {  // ordered
           CString buf = ctx.get_buffer();
           th_write_size = static_cast<size_t>(buf.size);
-          th_write_at = wb->prep_write(th_write_size, buf.ch);
+          th_write_at = wb->prepare_write(th_write_size, buf.ch);
         },
 
         [&](size_t) {  // post-ordered

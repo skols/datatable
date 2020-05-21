@@ -45,6 +45,12 @@
 #include <utility>
 #include <array>
 #include <cassert>
+#include "utils/macros.h"
+
+#if DT_COMPILER_MSVC
+    #pragma warning(push)
+    #pragma warning(disable : 4245)
+#endif
 
 #include "lib/parallel_hashmap/phmap_utils.h"
 #include "lib/parallel_hashmap/phmap_base.h"
@@ -4618,5 +4624,10 @@ public:
 };
 
 }  // namespace phmap
+
+
+#if DT_COMPILER_MSVC
+    #pragma warning(pop)
+#endif
 
 #endif // phmap_h_guard_

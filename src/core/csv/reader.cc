@@ -38,6 +38,8 @@
 namespace dt {
 namespace read {
 
+#define D() if (verbose) logger_.info()
+
 
 //------------------------------------------------------------------------------
 // options
@@ -83,7 +85,9 @@ void GenericReader::init_options() {
 //------------------------------------------------------------------------------
 
 GenericReader::GenericReader()
+  : preframe(this)
 {
+  source_name = nullptr;
   na_strings = nullptr;
   sof = nullptr;
   eof = nullptr;
@@ -91,11 +95,13 @@ GenericReader::GenericReader()
   cr_is_newline = 0;
   multisource_strategy = FreadMultiSourceStrategy::Warn;
   errors_strategy = IreadErrorHandlingStrategy::Error;
+  memory_limit = size_t(-1);
 }
 
 
 // Copy-constructor will copy only the essential parts
 GenericReader::GenericReader(const GenericReader& g)
+  : preframe(this)
 {
   // Input parameters
   nthreads         = g.nthreads;
@@ -118,13 +124,16 @@ GenericReader::GenericReader(const GenericReader& g)
   number_is_na     = g.number_is_na;
   columns_arg      = g.columns_arg;
   t_open_input     = g.t_open_input;
+  memory_limit     = g.memory_limit;
+  encoding_        = g.encoding_;
   // Runtime parameters
   job     = g.job;
   input_mbuf = g.input_mbuf;
   sof     = g.sof;
   eof     = g.eof;
   line    = g.line;
-  logger  = g.logger;   // for verbose messages / warnings
+  logger_ = g.logger_;
+  source_name = g.source_name;
 }
 
 GenericReader::~GenericReader() {}
@@ -136,21 +145,32 @@ void GenericReader::init_nthreads(const py::Arg& arg) {
   int maxth = static_cast<int>(dt::num_threads_in_pool());
   if (nth == DEFAULT) {
     nthreads = maxth;
-    trace("Using default %d thread%s", nthreads, (nthreads==1? "" : "s"));
+    D() << "Using default " << nthreads << " thread(s)";
   } else {
     nthreads = nth;
     if (nthreads > maxth) nthreads = maxth;
     if (nthreads <= 0) nthreads += maxth;
     if (nthreads <= 0) nthreads = 1;
-    trace("Using %d thread%s (requested=%d, max.available=%d)",
-          nthreads, (nthreads==1? "" : "s"), nth, maxth);
+    D() << "Using " << nthreads << " thread(s) "
+          "(requested=" << nth << ", max.available=" << maxth << ")";
   }
 }
+
+
+void GenericReader::init_encoding(const py::Arg& arg) {
+  if (arg.is_none_or_undefined()) return;
+  encoding_ = arg.to_string();
+  if (!PyCodec_KnownEncoding(encoding_.c_str())) {
+    throw ValueError() << "Unknown encoding " << encoding_;
+  }
+  D() << "encoding = '" << encoding_ << "'";
+}
+
 
 void GenericReader::init_fill(const py::Arg& arg) {
   fill = arg.to<bool>(false);
   if (fill) {
-    trace("fill=True (incomplete lines will be padded with NAs)");
+    D() << "fill = True (incomplete lines will be padded with NAs)";
   }
 }
 
@@ -160,20 +180,21 @@ void GenericReader::init_maxnrows(const py::Arg& arg) {
     max_nrows = std::numeric_limits<size_t>::max();
   } else {
     max_nrows = static_cast<size_t>(n);
-    trace("max_nrows = %lld", static_cast<long long>(n));
+    D() << "max_nrows = " << max_nrows;
   }
 }
 
 void GenericReader::init_skiptoline(const py::Arg& arg) {
   int64_t n = arg.to<int64_t>(-1);
   skip_to_line = (n < 0)? 0 : static_cast<size_t>(n);
-  if (n > 1) trace("skip_to_line = %zu", n);
+  if (n > 1) {
+    D() << "skip_to_line = " << skip_to_line;
+  }
 }
 
 void GenericReader::init_sep(const py::Arg& arg) {
   if (arg.is_none_or_undefined()) {
     sep = '\xFF';
-    trace("sep = <auto-detect>");
     return;
   }
   auto str = arg.to_string();
@@ -181,7 +202,7 @@ void GenericReader::init_sep(const py::Arg& arg) {
   const char c = size? str[0] : '\n';
   if (c == '\n' || c == '\r') {
     sep = '\n';
-    trace("sep = <single-column mode>");
+    D() << "sep = <single-column mode>";
   } else if (size > 1) {
     throw NotImplError() << "Multi-character or unicode separators are not "
                             "supported: '" << str << "'";
@@ -191,6 +212,7 @@ void GenericReader::init_sep(const py::Arg& arg) {
       throw ValueError() << "Separator `" << c << "` is not allowed";
     }
     sep = c;
+    D() << "sep = '" << sep << "'";
   }
 }
 
@@ -209,14 +231,18 @@ void GenericReader::init_dec(const py::Arg& arg) {
   const char c = str[0];
   if (c == '.' || c == ',') {
     dec = c;
-    trace("Decimal separator = '%c'", dec);
+    D() << "dec = " << dec;
   } else {
     throw ValueError() << "Only dec='.' or ',' are allowed";
   }
 }
 
 void GenericReader::init_quote(const py::Arg& arg) {
-  auto str = arg.to<std::string>("\"");
+  if (arg.is_none_or_undefined()) {
+    quote = '"';
+    return;
+  }
+  auto str = arg.to_string();
   if (str.size() == 0) {
     quote = '\0';
   } else if (str.size() > 1) {
@@ -224,9 +250,11 @@ void GenericReader::init_quote(const py::Arg& arg) {
                        << str << "'";
   } else if (str[0] == '"' || str[0] == '\'' || str[0] == '`') {
     quote = str[0];
-    trace("Quote char = (%c)", quote);
+    if (quote == '\'') { D() << "quote = \"'\""; }
+    else               { D() << "quote = '" << quote << "'"; }
   } else {
-    throw ValueError() << "quotechar = (" << str << ") is not allowed";
+    throw ValueError() << "quotechar = (" << escape_backticks(str)
+                       << ") is not allowed";
   }
 }
 
@@ -235,7 +263,7 @@ void GenericReader::init_header(const py::Arg& arg) {
     header = GETNA<int8_t>();
   } else {
     header = arg.to_bool_strict();
-    trace("header = %s", header? "True" : "False");
+    D() << "header = " << (header? "True" : "False");
   }
 }
 
@@ -303,7 +331,7 @@ void GenericReader::init_nastrings(const py::Arg& arg) {
   }
   if (verbose) {
     if (*na_strings == nullptr) {
-      trace("No na_strings provided");
+      D() << "No na_strings provided";
     } else {
       std::string out = "na_strings = [";
       ptr = na_strings;
@@ -314,9 +342,9 @@ void GenericReader::init_nastrings(const py::Arg& arg) {
         if (*ptr) out += ", ";
       }
       out += ']';
-      trace("%s", out.c_str());
-      if (number_is_na) trace("  + some na strings look like numbers");
-      if (blank_is_na)  trace("  + empty string is considered an NA");
+      D() << out;
+      if (number_is_na) D() << "  + some na strings look like numbers";
+      if (blank_is_na)  D() << "  + empty string is considered an NA";
     }
   }
 }
@@ -328,25 +356,24 @@ void GenericReader::init_skipstring(const py::Arg& arg) {
       throw ValueError() << "Parameters `skip_to_line` and `skip_to_string` "
                          << "cannot be provided simultaneously";
     }
-    trace("skip_to_string = \"%s\"", skip_to_string.data());
+    D() << "skip_to_string = \"" << skip_to_string << "\"";
   }
 }
 
 void GenericReader::init_stripwhite(const py::Arg& arg) {
   strip_whitespace = arg.to<bool>(true);
-  trace("strip_whitespace = %s", strip_whitespace? "True" : "False");
+  D() << "strip_whitespace = " << (strip_whitespace? "True" : "False");
 }
 
 void GenericReader::init_skipblanks(const py::Arg& arg) {
   skip_blank_lines = arg.to<bool>(false);
-  trace("skip_blank_lines = %s", skip_blank_lines? "True" : "False");
+  D() << "skip_blank_lines = " << (skip_blank_lines? "True" : "False");
 }
 
 void GenericReader::init_tempdir(const py::Arg& arg_tempdir) {
   auto clsTempFiles = py::oobj::import("datatable.utils.fread", "TempFiles");
   auto tempdir = arg_tempdir.to_oobj_or_none();
-  tempfiles = logger? clsTempFiles.call({tempdir, logger})
-                    : clsTempFiles.call(tempdir);
+  tempfiles = clsTempFiles.call({tempdir, logger_.get_pylogger()});
 }
 
 void GenericReader::init_columns(const py::Arg& arg) {
@@ -361,11 +388,20 @@ void GenericReader::init_logger(
   verbose = arg_verbose.to<bool>(false);
   if (arg_logger.is_none_or_undefined()) {
     if (verbose) {
-      logger = py::oobj::import("datatable.utils.fread", "_DefaultLogger").call();
+      logger_.enable();
     }
   } else {
-    logger = arg_logger.to_oobj();
+    logger_.use_pylogger(arg_logger.to_oobj());
     verbose = true;
+  }
+}
+
+
+void GenericReader::init_memorylimit(const py::Arg& arg) {
+  constexpr size_t UNLIMITED = size_t(-1);
+  memory_limit = arg.to<size_t>(UNLIMITED);
+  if (memory_limit != UNLIMITED) {
+    D() << "memory_limit = " << memory_limit << " bytes";
   }
 }
 
@@ -376,50 +412,15 @@ void GenericReader::init_logger(
 // Main read_all() function
 //------------------------------------------------------------------------------
 
-py::oobj GenericReader::read_all(py::robj pysources)
-{
-  auto pysrcs = pysources.to_otuple();
-  src_arg  = pysrcs[0];
-  file_arg = pysrcs[1];
-  fileno   = pysrcs[2].to_int32();
-  text_arg = pysrcs[3];
-
-  if (logger) {
-    logger.invoke("debug", py::ostring("[1] Prepare for reading"));
-  }
-  job = std::make_shared<dt::progress::work>(WORK_PREPARE + WORK_READ);
-  open_input();
-  bool done = read_jay();
-
-  if (!done) {
-    detect_and_skip_bom();
-    skip_to_line_number();
-    skip_to_line_with_string();
-    skip_initial_whitespace();
-    skip_trailing_whitespace();
-    job->add_done_amount(WORK_PREPARE);
-
-    read_empty_input() ||
-    detect_improper_files() ||
-    read_csv();
-  }
-
-  if (!output_) {
-    throw IOError() << "Unable to read input " << src_arg.to_string();
-  }
-
-  job->done();
-  return output_;
-}
-
-
 py::oobj GenericReader::read_buffer(const Buffer& buf, size_t extra_byte)
 {
-  if (logger) {
-    logger.invoke("debug", py::ostring("[1] Prepare for reading"));
+  {
+    auto _ = logger_.section("[1] Prepare for reading");
+    job = std::make_shared<dt::progress::work>(WORK_PREPARE + WORK_READ);
+    open_buffer(buf, extra_byte);
+    process_encoding();
+    log_file_sample();
   }
-  open_buffer(buf, extra_byte);
-  job = std::make_shared<dt::progress::work>(WORK_PREPARE + WORK_READ);
   bool done = read_jay();
 
   if (!done) {
@@ -436,19 +437,52 @@ py::oobj GenericReader::read_buffer(const Buffer& buf, size_t extra_byte)
   }
 
   if (!output_) {
-    throw IOError() << "Unable to read input " << src_arg.to_string();
+    throw IOError() << "Unable to read input " << *source_name;
   }
 
   job->done();
   return output_;
 }
 
+
+void GenericReader::log_file_sample() {
+  if (!verbose) return;
+  d() << "==== file sample ====";
+  const char* ch = sof;
+  bool newline = true;
+  for (int i = 0; i < 5 && ch < eof; i++) {
+    if (newline) d() << repr_source(ch, 100);
+    else         d() << "..." << repr_source(ch, 97);
+    const char* start = ch;
+    const char* end = std::min(eof, ch + 10000);
+    while (ch < end) {
+      char c = *ch++;
+      // simplified newline sequence. TODO: replace with `skip_eol()`
+      if (c == '\n' || c == '\r') {
+        if (ch < end && (*ch == '\r' || *ch == '\n') && *ch != c) ch++;
+        break;
+      }
+    }
+    if (ch == end && ch < eof) {
+      ch = start + 100;
+      newline = false;
+    } else {
+      newline = true;
+    }
+  }
+  d() << "=====================";
+}
 
 
 //------------------------------------------------------------------------------
 
 py::oobj GenericReader::get_tempfiles() const {
   return tempfiles;
+}
+
+log::Message GenericReader::d() const {
+  xassert(verbose);
+  return logger_.info();
 }
 
 
@@ -461,72 +495,6 @@ bool GenericReader::extra_byte_accessible() const {
   return (eof < ptr + input_mbuf.size());
 }
 
-
-#if !DT_OS_WINDOWS
-__attribute__((format(printf, 2, 3)))
-#endif
-void GenericReader::trace(const char* format, ...) const {
-  if (!verbose) return;
-  va_list args;
-  va_start(args, format);
-  _message("debug", format, args);
-  va_end(args);
-}
-
-#if !DT_OS_WINDOWS
-__attribute__((format(printf, 2, 3)))
-#endif
-void GenericReader::warn(const char* format, ...) const {
-  va_list args;
-  va_start(args, format);
-  _message("warning", format, args);
-  va_end(args);
-}
-
-static void _send_message_to_python(
-    const char* method, const char* message, const py::oobj& logger)
-{
-  PyObject* pymsg = PyUnicode_FromString(message);
-  if (pymsg) {
-    PyObject* py_logger = logger.to_borrowed_ref();
-    PyObject* res = PyObject_CallMethod(py_logger, method, "(O)", pymsg);
-    Py_XDECREF(res);
-  }
-  PyErr_Clear();  // ignore any exceptions
-  Py_XDECREF(pymsg);
-}
-
-void GenericReader::_message(
-  const char* method, const char* format, va_list args) const
-{
-  static char shared_buffer[2001];
-  char* msg;
-  if (strcmp(format, "%s") == 0) {
-    msg = va_arg(args, char*);
-  } else {
-    msg = shared_buffer;
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wformat-nonliteral"
-    vsnprintf(msg, 2000, format, args);
-    #pragma GCC diagnostic pop
-  }
-
-  if (dt::num_threads_in_team() == 0) {
-    _send_message_to_python(method, msg, logger);
-  } else {
-    // Any other team-wide mutex would work too
-    std::lock_guard<std::mutex> lock(dt::python_mutex());
-    delayed_message += msg;
-  }
-}
-
-void GenericReader::emit_delayed_messages() {
-  std::lock_guard<std::mutex> lock(dt::python_mutex());
-  if (delayed_message.size()) {
-    _send_message_to_python("debug", delayed_message.c_str(), logger);
-    delayed_message.clear();
-  }
-}
 
 
 static void print_byte(uint8_t c, char*& out) {
@@ -639,69 +607,48 @@ const char* GenericReader::repr_binary(
 // Input handling
 //------------------------------------------------------------------------------
 
-void GenericReader::open_input() {
-  if (input_mbuf) return;
-  double t0 = wallclock();
-  CString text;
-  const char* filename = nullptr;
-  if (fileno > 0) {
-    const char* src = src_arg.to_cstring().ch;
-    input_mbuf = Buffer::mmap(src, 0, fileno, false);
-    size_t sz = input_mbuf.size();
-    trace("Using file %s opened at fd=%d; size = %zu", src, fileno, sz);
-
-  } else if ((text = text_arg.to_cstring())) {
-    size_t size = static_cast<size_t>(text.size);
-    input_mbuf = Buffer::external(text.ch, size + 1);
-    input_is_string = true;
-
-  } else if ((filename = file_arg.to_cstring().ch)) {
-    input_mbuf = Buffer::mmap(filename);
-    size_t sz = input_mbuf.size();
-    trace("File \"%s\" opened, size: %zu", filename, sz);
-
-  } else {
-    throw IOError() << "No input given to the GenericReader";
-  }
-  line = 1;
-  sof = static_cast<const char*>(input_mbuf.rptr());
-  eof = sof + input_mbuf.size();
-  if (verbose) {
-    trace("==== file sample ====");
-    const char* ch = sof;
-    bool newline = true;
-    for (int i = 0; i < 5 && ch < eof; i++) {
-      if (newline) trace("%s", repr_source(ch, 100));
-      else         trace("...%s", repr_source(ch, 97));
-      const char* start = ch;
-      const char* end = std::min(eof, ch + 10000);
-      while (ch < end) {
-        char c = *ch++;
-        // simplified newline sequence. TODO: replace with `skip_eol()`
-        if (c == '\n' || c == '\r') {
-          if ((*ch == '\r' || *ch == '\n') && *ch != c) ch++;
-          break;
-        }
-      }
-      if (ch == end && ch < eof) {
-        ch = start + 100;
-        newline = false;
-      } else {
-        newline = true;
-      }
-    }
-    trace("=====================");
-  }
-  t_open_input = wallclock() - t0;
-}
-
-
 void GenericReader::open_buffer(const Buffer& buf, size_t extra_byte) {
   input_mbuf = buf;
   line = 1;
   sof = static_cast<const char*>(input_mbuf.rptr());
   eof = sof + input_mbuf.size() - extra_byte;
-  if (eof) xassert(*eof == '\0');
+
+  if (eof && extra_byte) {
+    xassert(*eof == '\0');
+  }
+}
+
+
+void GenericReader::process_encoding() {
+  if (encoding_.empty()) return;
+  if (verbose) {
+    D() << "Decoding input from " << encoding_;
+  }
+  job->add_work_amount(WORK_DECODE_UTF16);
+  job->set_message("Decoding " + encoding_);
+  dt::progress::subtask subjob(*job, WORK_DECODE_UTF16);
+
+  const char* enc_errors = (encoding_ == "base64"? "strict" : "replace");
+
+  auto decoder = py::oobj::from_new_reference(
+      PyCodec_IncrementalDecoder(encoding_.c_str(), enc_errors));
+  auto decode = decoder.get_attr("decode");
+
+  auto wb = std::make_unique<MemoryWritableBuffer>(input_mbuf.size() * 6/5);
+  constexpr size_t CHUNK_SIZE = 1024 * 1024;
+  for (const char* ch = sof; ch < eof; ch += CHUNK_SIZE) {
+    size_t chunk_size = std::min(static_cast<size_t>(eof - ch), CHUNK_SIZE);
+    // TODO: use obytes class
+    auto original_bytes =
+      py::oobj::from_new_reference(
+        PyBytes_FromStringAndSize(ch, static_cast<Py_ssize_t>(chunk_size)));
+    auto is_final = py::obool(ch + chunk_size == eof);
+    auto decoded_string = decode.call({original_bytes, is_final});
+    wb->write(decoded_string.to_cstring());
+  }
+  wb->finalize();
+  open_buffer(wb->get_mbuf(), 0);
+  subjob.done();
 }
 
 
@@ -713,17 +660,18 @@ void GenericReader::open_buffer(const Buffer& buf, size_t extra_byte) {
  * See: https://en.wikipedia.org/wiki/Byte_order_mark
  */
 void GenericReader::detect_and_skip_bom() {
+  if (!encoding_.empty()) return;
   size_t sz = datasize();
   const char* ch = sof;
   if (!sz) return;
   if (sz >= 3 && ch[0]=='\xEF' && ch[1]=='\xBB' && ch[2]=='\xBF') {
     sof += 3;
-    trace("UTF-8 byte order mark EF BB BF found at the start of the file "
-          "and skipped");
+    D() << "UTF-8 byte order mark EF BB BF found at the start of the file "
+           "and skipped";
   } else
   if (sz >= 2 && ch[0] + ch[1] == '\xFE' + '\xFF') {
-    trace("UTF-16 byte order mark %s found at the start of the file and "
-          "skipped", ch[0]=='\xFE'? "FE FF" : "FF FE");
+    D() << "UTF-16 byte order mark " << (ch[0]=='\xFE'? "FE FF" : "FF FE")
+        << " found at the start of the file and skipped";
     decode_utf16();
     detect_and_skip_bom();  // just in case BOM was not discarded
   }
@@ -742,9 +690,9 @@ void GenericReader::detect_and_skip_bom() {
  *
  * Example
  * -------
- * Suppose input is the following (_ shows spaces, ␤ is newline, and ⇥ is tab):
+ * Suppose input is the following (_ is a space):
  *
- *     _ _ _ _ ␤ _ ⇥ _ H e l l o …
+ *     _ _ _ _ \\n _ \\t _ H e l l o …
  *
  * If strip_whitespace=true, then this function will move the `sof` to
  * character H; whereas if strip_whitespace=false, this function will move the
@@ -765,7 +713,7 @@ void GenericReader::skip_initial_whitespace() {
   if (ch > sof) {
     size_t doffset = static_cast<size_t>(ch - sof);
     sof = ch;
-    trace("Skipped %zu initial whitespace character(s)", doffset);
+    D() << "Skipped " << doffset << " initial whitespace character(s)";
   }
 }
 
@@ -781,7 +729,7 @@ void GenericReader::skip_trailing_whitespace() {
     size_t d = static_cast<size_t>(eof - 1 - ch);
     eof = ch + 1;
     if (d > 1) {
-      trace("Skipped %zu trailing whitespace characters", d);
+      D() << "Skipped " << d << " trailing whitespace characters";
     }
   }
 }
@@ -802,7 +750,7 @@ void GenericReader::skip_to_line_number() {
   }
   if (ch > sof) {
     sof = ch;
-    trace("Skipped to line %zd in the file", line);
+    D() << "Skipped to line " << line << " in the file";
   }
 }
 
@@ -819,8 +767,8 @@ void GenericReader::skip_to_line_with_string() {
       if (ss[d] == '\0') {
         if (line_start > sof) {
           sof = line_start;
-          trace("Skipped to line %zd containing skip_to_string = \"%s\"",
-                line, ss);
+          D() << "Skipped to line " << line
+              << " containing skip_to_string = \"" << skip_to_string << "\"";
         }
         return;
       } else {
@@ -843,7 +791,7 @@ void GenericReader::skip_to_line_with_string() {
 bool GenericReader::read_empty_input() {
   size_t size = datasize();
   if (size == 0 || (size == 1 && *sof == '\0')) {
-    trace("Input is empty, returning a (0 x 0) DataTable");
+    D() << "Input is empty, returning a (0 x 0) DataTable";
     job->add_done_amount(WORK_READ);
     output_ = py::Frame::oframe(new DataTable());
     return true;
@@ -862,13 +810,13 @@ bool GenericReader::detect_improper_files() {
   // --- detect HTML ---
   while (ch < eof && (*ch==' ' || *ch=='\t')) ch++;
   if (ch + 15 < eof && std::memcmp(ch, "<!DOCTYPE html>", 15) == 0) {
-    throw IOError() << src_arg.to_string() << " is an HTML file. Please "
+    throw IOError() << *source_name << " is an HTML file. Please "
         << "open it in a browser and then save in a plain text format.";
   }
   // --- detect Feather ---
   if (sof + 8 < eof && std::memcmp(sof, "FEA1", 4) == 0
                     && std::memcmp(eof - 4, "FEA1", 4) == 0) {
-    throw IOError() << src_arg.to_string() << " is a feather file, it "
+    throw IOError() << *source_name << " is a feather file, it "
         "cannot be read with fread.";
   }
   return false;

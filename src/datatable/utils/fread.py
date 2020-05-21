@@ -34,6 +34,7 @@ from datatable.exceptions import TypeError, ValueError, IOError, FreadWarning
 from datatable.utils.misc import (normalize_slice, normalize_range,
                                   humanize_bytes)
 from datatable.utils.misc import plural_form as plural
+from datatable.utils.misc import backticks_escape as escape
 from datatable.types import stype, ltype
 from datatable.xls import read_xls_workbook
 
@@ -106,7 +107,7 @@ def _resolve_source_any(src, tempfiles):
                 if ccode < 0x20:
                     if logger:
                         logger.debug("Input contains '\\x%02X', "
-                                          "treating it as raw text" % ccode)
+                                     "treating it as raw text" % ccode)
                     return _resolve_source_text(src)
             if is_str and re.match(_url_regex, src):
                 if logger:
@@ -199,9 +200,10 @@ def _resolve_source_file(file, tempfiles):
         if os.path.isfile(xpath):
             return _resolve_archive(xpath, ypath, tempfiles)
         else:
-            raise ValueError("File %s`%s` does not exist" % (xpath, ypath))
+            raise ValueError("File %s`%s` does not exist"
+                             % (escape(xpath), escape(ypath)))
     if not os.path.isfile(file):
-        raise ValueError("Path `%s` is not a file" % file)
+        raise ValueError("Path `%s` is not a file" % escape(file))
     return _resolve_archive(file, None, tempfiles)
 
 
@@ -351,11 +353,11 @@ def _resolve_source_cmd(cmd):
         return (cmd, None, None, msgout), None
 
 
-def _resolve_source_url(url, tempfiles):
+def _resolve_source_url(url, tempfiles, reporthook=None):
     assert url is not None
     import urllib.request
     targetfile = tempfiles.create_temp_file()
-    urllib.request.urlretrieve(url, filename=targetfile)
+    urllib.request.urlretrieve(url, filename=targetfile, reporthook=reporthook)
     # src, file, fileno, text, result
     return (url, targetfile, None, None), None
 
@@ -531,16 +533,6 @@ def _apply_columns_function(colsfn, colsdesc):
 #-------------------------------------------------------------------------------
 # Helper classes
 #-------------------------------------------------------------------------------
-
-class _DefaultLogger:
-    def debug(self, message):
-        if message[0] != "[":
-            message = "  " + message
-        print(core.apply_color("grey", message), flush=True)
-
-    def warning(self, message):
-        warnings.warn(message, category=FreadWarning)
-
 
 # os.PathLike interface was added in Python 3.6
 _pathlike = (str, bytes, os.PathLike) if hasattr(os, "PathLike") else \

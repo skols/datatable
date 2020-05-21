@@ -1,20 +1,35 @@
 //------------------------------------------------------------------------------
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright 2018-2020 H2O.ai
 //
-// © H2O.ai 2018
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+// IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include "utils/macros.h"
 #include "utils/misc.h"
 #include <stdint.h>
+#include <cstring>    // std::memcpy
 
 
 namespace dt {
 
 // The warning is spurious, because shifts triggering the warning are
 // within if() conditions that get statically ignored.
-#if !DT_OS_WINDOWS
+#if DT_COMPILER_GCC
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wshift-count-overflow"
 #endif
@@ -30,6 +45,15 @@ template <typename T>
 int nlz(T x) {
   T y;
   int n = sizeof(T) * 8;
+
+  #if DT_COMPILER_MSVC
+    #pragma warning(push)
+    // shift count negative or too big, undefined behavior
+    #pragma warning(disable : 4293)
+    // right shift by too large amount, data loss
+    #pragma warning(disable : 4333) 
+  #endif 
+
   if (sizeof(T) >= 8) {
     y = x >> 32; if (y != 0) { n = n -32;  x = y; }
   }
@@ -39,6 +63,11 @@ int nlz(T x) {
   if (sizeof(T) >= 2) {
     y = x >> 8;  if (y != 0) { n = n - 8;  x = y; }
   }
+  
+  #if DT_COMPILER_MSVC
+    #pragma warning(pop)
+  #endif
+
   if (sizeof(T) >= 1) {
     y = x >> 4;  if (y != 0) { n = n - 4;  x = y; }
     y = x >> 2;  if (y != 0) { n = n - 2;  x = y; }
@@ -53,6 +82,15 @@ int nsb(T x) {
   static_assert(std::is_unsigned<T>::value, "Wrong T in nsb<T>()");
   T y;
   int m = 0;
+
+  #if DT_COMPILER_MSVC
+    #pragma warning(push)
+    // shift count negative or too big, undefined behavior
+    #pragma warning(disable : 4293)
+    // right shift by too large amount, data loss
+    #pragma warning(disable : 4333) 
+  #endif
+
   if (sizeof(T) >= 8) {
     y = x >> 32; if (y) { m += 32;  x = y; }
   }
@@ -62,6 +100,11 @@ int nsb(T x) {
   if (sizeof(T) >= 2) {
     y = x >> 8;  if (y) { m += 8;  x = y; }
   }
+
+  #if DT_COMPILER_MSVC
+    #pragma warning(pop)
+  #endif
+  
   if (sizeof(T) >= 1) {
     y = x >> 4;  if (y) { m += 4;  x = y; }
     y = x >> 2;  if (y) { m += 2;  x = y; }
@@ -70,7 +113,7 @@ int nsb(T x) {
   return m + static_cast<int>(x);
 }
 
-#if !DT_OS_WINDOWS
+#if DT_COMPILER_GCC
   #pragma GCC diagnostic pop
 #endif
 

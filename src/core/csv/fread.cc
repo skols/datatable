@@ -4,9 +4,11 @@
 //------------------------------------------------------------------------------
 #include "csv/reader_fread.h"                  // FreadReader
 #include "read/fread/fread_parallel_reader.h"  // FreadParallelReader
-#include "read/fread/fread_tokenizer.h"        // FreadTokenizer
+#include "read/parse_context.h"                // ParseContext
 #include "utils/misc.h"                        // wallclock
 #include "datatable.h"                         // DataTable
+
+#define D() if (verbose) logger_.info()
 
 
 
@@ -34,9 +36,11 @@ std::unique_ptr<DataTable> FreadReader::read_all()
   //     of data ("removing" the column names).
   //****************************************************************************
   if (header == 1) {
-    trace("[4] Assign column names");
+    auto _ = logger_.section("[4] Assign column names");
     dt::read::field64 tmp;
-    dt::read::FreadTokenizer fctx = makeTokenizer(&tmp, /* anchor= */ sof);
+    dt::read::ParseContext fctx = makeTokenizer();
+    fctx.target = &tmp;
+    fctx.anchor = sof;
     fctx.ch = sof;
     parse_column_names(fctx);
     sof = fctx.ch;  // Update sof to point to the first line after the columns
@@ -49,7 +53,7 @@ std::unique_ptr<DataTable> FreadReader::read_all()
   // [5] Allow user to override column types; then allocate the DataTable
   //*********************************************************************************************
   {
-    if (verbose) trace("[5] Apply user overrides on column types");
+    auto _ = logger_.section("[5] Apply user overrides on column types");
     auto oldtypes = preframe.get_ptypes();
 
     report_columns_to_python();
@@ -63,29 +67,26 @@ std::unique_ptr<DataTable> FreadReader::read_all()
       if (col.is_dropped()) {
         ndropped++;
         continue;
-      } else {
-        if (col.get_ptype() < oldtypes[i]) {
-          // FIXME: if the user wants to override the type, let them
-          throw IOError()
-              << "Attempt to override column " << i + 1 << " \"" << col.repr_name(*this)
-              << "\" with detected type '" << ParserLibrary::info(oldtypes[i]).cname()
-              << "' down to '" << col.typeName() << "' which will lose accuracy. "
-                 "If this was intended, please coerce to the lower type afterwards. Only "
-                 "overrides to a higher type are permitted.";
-        }
-        nUserBumped += (col.get_ptype() != oldtypes[i]);
       }
-    }
-    if (verbose) {
-      if (nUserBumped || ndropped) {
-        trace("After %d type and %d drop user overrides : %s",
-              nUserBumped, ndropped, preframe.print_ptypes());
+      if (col.get_ptype() < oldtypes[i]) {
+        // FIXME: if the user wants to override the type, let them
+        throw IOError()
+            << "Attempt to override column " << i + 1 << " \"" << col.repr_name(*this)
+            << "\" with detected type '" << ParserLibrary::info(oldtypes[i]).cname()
+            << "' down to '" << col.typeName() << "' which is not supported yet.";
       }
-      trace("Allocating %d column slots with %zd rows",
-            ncols - ndropped, allocnrow);
+      nUserBumped += (col.get_ptype() != oldtypes[i]);
     }
 
-    preframe.set_nrows(allocnrow);
+    if (verbose) {
+      if (nUserBumped || ndropped) {
+        D() << "After " << nUserBumped << " type and " << ndropped
+            << " drop user overrides : " << preframe.print_ptypes();
+      }
+      D() << "Allocating " << dt::log::plural(ncols - ndropped, "column slot")
+          << " with " << dt::log::plural(allocnrow, "row");
+    }
+    preframe.preallocate(allocnrow);
 
     if (verbose) {
       fo.t_frame_allocated = wallclock();
@@ -105,9 +106,9 @@ std::unique_ptr<DataTable> FreadReader::read_all()
   auto typesPtr = preframe.get_ptypes();
   dt::read::PT* types = typesPtr.data();  // This pointer is valid until `typesPtr` goes out of scope
 
-  trace("[6] Read the data");
   read:  // we'll return here to reread any columns with out-of-sample type exceptions
   {
+    auto _ = logger_.section("[6] Read the data");
     job->set_message(firstTime? "Reading data" : "Rereading data");
     dt::progress::subtask subwork(*job, firstTime? WORK_READ : WORK_REREAD);
     dt::read::FreadParallelReader scr(*this, types);
@@ -119,37 +120,24 @@ std::unique_ptr<DataTable> FreadReader::read_all()
     } else {
       fo.t_data_reread = wallclock();
     }
-    size_t ncols = preframe.ncols();
     size_t ncols_to_reread = preframe.n_columns_to_reread();
     xassert((ncols_to_reread > 0) == reread_scheduled);
     if (ncols_to_reread) {
       fo.n_cols_reread += ncols_to_reread;
-      size_t n_type_bump_cols = 0;
-      for (size_t j = 0; j < ncols; j++) {
-        auto& col = preframe.column(j);
-        if (!col.is_in_output()) continue;
-        bool bumped = col.is_type_bumped();
-        col.reset_type_bumped();
-        col.set_in_buffer(bumped);
-        n_type_bump_cols += bumped;
-      }
+      D() << dt::log::plural(ncols_to_reread, "column")
+          << " need to be re-read because their types have changed";
+      preframe.prepare_for_rereading();
       firstTime = false;
-      if (verbose) {
-        trace(n_type_bump_cols == 1
-              ? "%zu column needs to be re-read because its type has changed"
-              : "%zu columns need to be re-read because their types have changed",
-              n_type_bump_cols);
-      }
       reread_scheduled = false;
       goto read;
     }
 
-    fo.n_rows_read = preframe.nrows();
+    fo.n_rows_read = preframe.nrows_written();
     fo.n_cols_read = preframe.n_columns_in_output();
   }
 
 
-  trace("[7] Finalize the datatable");
+  auto _ = logger_.section("[7] Finalizing the frame");
   std::unique_ptr<DataTable> res = std::move(preframe).to_datatable();
   if (verbose) fo.report();
   return res;

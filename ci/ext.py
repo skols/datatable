@@ -214,8 +214,8 @@ def build_extension(cmd, verbosity=3):
     ext.compiler.add_default_python_include_dir()
 
     if ext.compiler.is_msvc():
-        # Common compile flags
-        ext.compiler.add_compiler_flag("/W4")
+        # General compiler flags
+        ext.compiler.add_compiler_flag("/std:c++14")
         ext.compiler.add_compiler_flag("/EHsc")
         ext.compiler.add_compiler_flag("/nologo")
         ext.compiler.add_include_dir(ext.compiler.path + "\\include")
@@ -223,7 +223,28 @@ def build_extension(cmd, verbosity=3):
         ext.compiler.add_include_dir(ext.compiler.winsdk_include_path + "\\shared")
         ext.compiler.add_include_dir(ext.compiler.winsdk_include_path + "\\um")
 
-        # Common link flags
+
+        # Set up the compiler warning level
+        ext.compiler.add_compiler_flag("/W4")
+
+        # Disable particular warnings
+        ext.compiler.add_compiler_flag(
+            # "This function or variable may be unsafe"
+            # issued by MSVC for a fully valid and portable code
+            "/wd4996",
+            # "consider using 'if constexpr' statement instead"
+            # as 'if constexpr' is not available in C++14
+            "/wd4127",
+            # "no suitable definition provided for explicit template instantiation
+            # request" as we want to keep some template method definitions
+            # in separate translation units
+            "/wd4661",
+            # "structure was padded due to alignment specifier"
+            # as this is exactly the reason why we use the alignment specifier
+            "/wd4324",
+        )
+
+        # Link flags
         ext.compiler.add_linker_flag("/nologo")
         ext.compiler.add_linker_flag("/DLL")
         ext.compiler.add_linker_flag("/EXPORT:PyInit__datatable")
@@ -248,9 +269,12 @@ def build_extension(cmd, verbosity=3):
             ext.compiler.add_linker_flag("/DEBUG:FULL")
     else:
         # Common compile flags
-        ext.compiler.add_compiler_flag("-std=c++11")
+        ext.compiler.add_compiler_flag("-std=c++14")
         # "-stdlib=libc++"  (clang ???)
         ext.compiler.add_compiler_flag("-fPIC")
+        # -pthread is recommended for compiling/linking multithreaded apps
+        ext.compiler.add_compiler_flag("-pthread")
+        ext.compiler.add_linker_flag("-pthread")
 
         # Common link flags
         ext.compiler.add_linker_flag("-shared")
@@ -260,8 +284,6 @@ def build_extension(cmd, verbosity=3):
             ext.compiler.add_linker_flag("-undefined", "dynamic_lookup")
         if linux:
             ext.compiler.add_linker_flag("-lstdc++")
-        if ppc64:
-            ext.compiler.add_linker_flag("-pthread")
 
         if cmd == "asan":
             ext.compiler.add_compiler_flag("-fsanitize=address")
@@ -271,7 +293,7 @@ def build_extension(cmd, verbosity=3):
             ext.compiler.add_compiler_flag("-g3")
             ext.compiler.add_compiler_flag("-glldb" if macos else "-ggdb")
             ext.compiler.add_compiler_flag("-O0")
-            ext.compiler.add_compiler_flag("-DDTTEST", "-DDTDEBUG")
+            ext.compiler.add_compiler_flag("-DDTTEST", "-DDT_DEBUG")
             ext.compiler.add_linker_flag("-fsanitize=address", "-shared-libasan")
 
         if cmd == "build":
@@ -282,7 +304,7 @@ def build_extension(cmd, verbosity=3):
             ext.compiler.add_compiler_flag("-g2")
             ext.compiler.add_compiler_flag("-O0")
             ext.compiler.add_compiler_flag("--coverage")
-            ext.compiler.add_compiler_flag("-DDTTEST", "-DDTDEBUG")
+            ext.compiler.add_compiler_flag("-DDTTEST", "-DDT_DEBUG")
             ext.compiler.add_linker_flag("-O0")
             ext.compiler.add_linker_flag("--coverage")
 
@@ -290,7 +312,7 @@ def build_extension(cmd, verbosity=3):
             ext.compiler.add_compiler_flag("-g3")
             ext.compiler.add_compiler_flag("-glldb" if macos else "-ggdb")
             ext.compiler.add_compiler_flag("-O0")  # no optimization
-            ext.compiler.add_compiler_flag("-DDTTEST", "-DDTDEBUG")
+            ext.compiler.add_compiler_flag("-DDTTEST", "-DDT_DEBUG")
             if ext.compiler.flavor == "clang":
                 ext.compiler.add_compiler_flag("-fdebug-macro")
 
@@ -539,8 +561,8 @@ def build_sdist(sdist_directory, config_settings=None):
     files += glob.glob("src/core/**/*.cc", recursive=True)
     files += glob.glob("src/core/**/*.h", recursive=True)
     files += glob.glob("ci/xbuild/*.py")
-    files += [f for f in glob.glob("tests/**/*.py", recursive=True)
-              if "random_attack_logs" not in f]
+    files += [f for f in glob.glob("tests/**/*.py", recursive=True)]
+    files += [f for f in glob.glob("tests_random/*.py")]
     files += ["src/datatable/include/datatable.h"]
     files.sort()
     files += ["ci/ext.py", "ci/__init__.py"]

@@ -46,6 +46,7 @@ class thread_team;
 class thread_pool {
   friend class thread_team;
   friend std::mutex& python_mutex();
+  friend std::mutex& team_mutex();
   public:
     std::unique_ptr<monitor_thread> monitor;
 
@@ -74,6 +75,9 @@ class thread_pool {
     // Mutex which can be used to guard operations that must be protected
     // across all threads.
     std::mutex global_mutex;
+
+    // Mutex that guards access to python runtime
+    std::mutex python_mutex;
 
     // TODO: merge thread_team functionality into the pool?
     thread_team* current_team;

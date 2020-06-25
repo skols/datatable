@@ -19,13 +19,14 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 // IN THE SOFTWARE.
 //------------------------------------------------------------------------------
+#include "column.h"
 #include "csv/reader.h"
 #include "csv/reader_parsers.h"
 #include "python/string.h"
 #include "read/output_column.h"
 #include "read/input_column.h"
+#include "stype.h"
 #include "utils/temporary_file.h"
-#include "column.h"
 namespace dt {
 namespace read {
 
@@ -104,8 +105,8 @@ InputColumn::get_ptype_iterator(int8_t* qr_ptr) const {
 void InputColumn::set_ptype(PT new_ptype) {
   type_bumped_ = true;
   parse_type_ = new_ptype;
-  outcol_.set_stype(get_stype());
   outcol_.type_bumped_ = true;
+  outcol_.set_stype(get_stype());
 }
 
 // Set .parse_type_ to the provided value, disregarding the restrictions imposed
@@ -175,9 +176,6 @@ void InputColumn::reset_type_bumped() {
   outcol_.type_bumped_ = false;
 }
 
-size_t InputColumn::nrows_archived() const noexcept {
-  return outcol_.nrows_in_chunks_;
-}
 
 
 
@@ -212,7 +210,7 @@ py::oobj InputColumn::py_descriptor() const {
   static PyTypeObject* name_type_pytuple = init_nametypepytuple();
   PyObject* nt_tuple = PyStructSequence_New(name_type_pytuple);  // new ref
   if (!nt_tuple) throw PyError();
-  PyObject* stype = info(ParserLibrary::info(parse_type_).stype).py_stype().release();
+  PyObject* stype = stype_to_pyobj(ParserLibrary::info(parse_type_).stype).release();
   PyObject* cname = py::ostring(name_).release();
   PyStructSequence_SetItem(nt_tuple, 0, cname);
   PyStructSequence_SetItem(nt_tuple, 1, stype);
@@ -250,6 +248,7 @@ void InputColumn::prepare_for_rereading() {
     outcol_.strbuf_ = nullptr;
     outcol_.type_bumped_ = false;
     outcol_.present_in_buffer_ = true;
+    outcol_.colinfo_.na_count = 0;
   }
   else {
     present_in_buffer_ = false;

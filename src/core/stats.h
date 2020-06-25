@@ -221,7 +221,7 @@ class Stats
 
   private:
     template <typename S> py::oobj pywrap_stat(Stat);
-    template <typename S, typename R> Column colwrap_stat(Stat, SType);
+    template <typename S, typename R> Column colwrap_stat(Stat, dt::SType);
     Column strcolwrap_stat(Stat);
     friend class Column;
 };
@@ -353,6 +353,8 @@ class BooleanStats : public NumericStats<int64_t> {
   public:
     using NumericStats<int64_t>::NumericStats;
 
+    void set_all_stats(size_t count0, size_t count1);
+
   protected:
     std::unique_ptr<Stats> clone() const override;
 
@@ -364,6 +366,9 @@ class BooleanStats : public NumericStats<int64_t> {
     void compute_sorted_stats() override;
     void compute_all_stats();
 };
+
+extern template class NumericStats<int64_t>;
+
 
 
 

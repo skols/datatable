@@ -72,7 +72,7 @@ std::unique_ptr<WritableBuffer> WritableBuffer::create_target(
     res = new MemoryWritableBuffer(size);
   } else {
     if (strategy == Strategy::Auto) {
-      #if DT_OS_DARWIN
+      #if DT_OS_MACOS
         strategy = Strategy::Write;
       #else
         strategy = Strategy::Mmap;
@@ -114,6 +114,7 @@ size_t FileWritableBuffer::prepare_write(size_t src_size, const void* src) {
   constexpr size_t CHUNK_SIZE = 1 << 30;
   size_t pos = bytes_written_;
   if (!src_size) return pos;
+  XAssert(src);
 
   // On MacOS, it is impossible to write more than 2GB of data at once; on
   // Unix, the limit is 0x7ffff000 bytes.
@@ -207,6 +208,7 @@ void ThreadsafeWritableBuffer::write_at(size_t pos, size_t n, const void* src) {
       "length " << n << ", however the buffer is allocated for " << allocsize_
       << " bytes only";
   }
+  XAssert(src);
   dt::shared_lock<dt::shared_mutex> lock(shmutex_, /* exclusive = */ false);
   char* target = static_cast<char*>(data_) + pos;
   std::memcpy(target, src, n);
@@ -217,6 +219,44 @@ void ThreadsafeWritableBuffer::finalize() {
   dt::shared_lock<dt::shared_mutex> lock(shmutex_, /* exclusive = */ true);
   this->realloc(bytes_written_);
 }
+
+
+
+//==============================================================================
+// Writer (helper for MemoryWritableBuffer)
+//==============================================================================
+
+MemoryWritableBuffer::Writer::Writer(MemoryWritableBuffer* parent,
+                                     size_t start, size_t end)
+  : mbuf_(parent),
+    pos_start_(start),
+    pos_end_(end)
+{
+  XAssert(mbuf_ && pos_end_ <= mbuf_->allocsize_);
+  mbuf_->shmutex_.lock_shared();
+}
+
+MemoryWritableBuffer::Writer::Writer(Writer&& o)
+  : mbuf_(o.mbuf_),
+    pos_start_(o.pos_start_),
+    pos_end_(o.pos_end_)
+{
+  o.mbuf_ = nullptr;
+}
+
+
+MemoryWritableBuffer::Writer::~Writer() {
+  if (mbuf_) mbuf_->shmutex_.unlock_shared();
+}
+
+
+void MemoryWritableBuffer::Writer::write_at(size_t pos,
+                                            const char* src, size_t len)
+{
+  xassert(pos >= pos_start_ && pos + len <= pos_end_);
+  std::memcpy(static_cast<char*>(mbuf_->data_) + pos, src, len);
+}
+
 
 
 
@@ -260,6 +300,16 @@ std::string MemoryWritableBuffer::get_string() {
 void MemoryWritableBuffer::clear() {
   bytes_written_ = 0;
 }
+
+void* MemoryWritableBuffer::data() const {
+  return data_;
+}
+
+
+MemoryWritableBuffer::Writer MemoryWritableBuffer::writer(size_t start, size_t end) {
+  return MemoryWritableBuffer::Writer(this, start, end);
+}
+
 
 
 

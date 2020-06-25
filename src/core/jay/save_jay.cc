@@ -30,10 +30,11 @@
 #include "python/string.h"
 #include "utils/assert.h"
 #include "datatable.h"
+#include "stype.h"
 #include "writebuf.h"
 
 using WritableBufferPtr = std::unique_ptr<WritableBuffer>;
-static jay::Type stype_to_jaytype[DT_STYPES_COUNT];
+static jay::Type stype_to_jaytype[dt::STYPES_COUNT];
 static jay::Buffer saveMemoryRange(const void*, size_t, WritableBuffer*);
 template <typename T, typename StatBuilder>
 static flatbuffers::Offset<void> saveStats(
@@ -76,7 +77,7 @@ void DataTable::save_jay_impl(WritableBuffer* wb) {
   std::vector<flatbuffers::Offset<jay::Column>> msg_columns;
   for (size_t i = 0; i < ncols_; ++i) {
     Column& col = get_column(i);
-    if (col.stype() == SType::OBJ) {
+    if (col.stype() == dt::SType::OBJ) {
       auto w = DatatableWarning();
       w << "Column `" << names_[i] << "` of type obj64 was not saved";
       w.emit();
@@ -122,31 +123,31 @@ flatbuffers::Offset<jay::Column> Column::write_to_jay(
   flatbuffers::Offset<void> jsto;
   Stats* colstats = get_stats_if_exist();
   switch (stype()) {
-    case SType::BOOL:
+    case dt::SType::BOOL:
       jsto = saveStats<int8_t,  jay::StatsBool>(colstats, fbb);
       jsttype = jay::Stats_Bool;
       break;
-    case SType::INT8:
+    case dt::SType::INT8:
       jsto = saveStats<int8_t,  jay::StatsInt8>(colstats, fbb);
       jsttype = jay::Stats_Int8;
       break;
-    case SType::INT16:
+    case dt::SType::INT16:
       jsto = saveStats<int16_t, jay::StatsInt16>(colstats, fbb);
       jsttype = jay::Stats_Int16;
       break;
-    case SType::INT32:
+    case dt::SType::INT32:
       jsto = saveStats<int32_t, jay::StatsInt32>(colstats, fbb);
       jsttype = jay::Stats_Int32;
       break;
-    case SType::INT64:
+    case dt::SType::INT64:
       jsto = saveStats<int64_t, jay::StatsInt64>(colstats, fbb);
       jsttype = jay::Stats_Int64;
       break;
-    case SType::FLOAT32:
+    case dt::SType::FLOAT32:
       jsto = saveStats<float,   jay::StatsFloat32>(colstats, fbb);
       jsttype = jay::Stats_Float32;
       break;
-    case SType::FLOAT64:
+    case dt::SType::FLOAT64:
       jsto = saveStats<double,  jay::StatsFloat64>(colstats, fbb);
       jsttype = jay::Stats_Float64;
       break;
@@ -261,8 +262,8 @@ static flatbuffers::Offset<void> saveStats(
   R min, max;
   bool min_valid = stats->get_stat(Stat::Min, &min);
   bool max_valid = stats->get_stat(Stat::Max, &max);
-  StatBuilder ss(min_valid? static_cast<T>(min) : GETNA<T>(),
-                 max_valid? static_cast<T>(max) : GETNA<T>());
+  StatBuilder ss(min_valid? static_cast<T>(min) : dt::GETNA<T>(),
+                 max_valid? static_cast<T>(max) : dt::GETNA<T>());
   flatbuffers::Offset<void> o = fbb.CreateStruct(ss).Union();
   return o;
 }
@@ -276,9 +277,9 @@ namespace py {
 
 
 static PKArgs args_to_jay(
-  1, 0, 1, false, false, {"path", "_strategy"}, "to_jay",
+  1, 0, 1, false, false, {"path", "method"}, "to_jay",
 
-R"(to_jay(self, path, _strategy='auto')
+R"(to_jay(self, path, method='auto')
 --
 
 Save this frame to a binary file on disk, in .jay format.
@@ -292,7 +293,7 @@ path: str
     If this argument is omitted, the file will be created in memory
     instead, and returned as a `bytes` object.
 
-_strategy: 'mmap' | 'write' | 'auto'
+method: 'mmap' | 'write' | 'auto'
     Which method to use for writing the file to disk. The "write"
     method is more portable across different operating systems, but
     may be slower. This parameter has no effect when `path` is
@@ -310,15 +311,15 @@ oobj Frame::to_jay(const PKArgs& args) {
   path = oobj::import("os", "path", "expanduser").call({path});
   std::string filename = path.to_string();
 
-  // _strategy
-  auto strategy = args[1].to<std::string>("auto");
-  auto sstrategy = (strategy == "mmap")  ? WritableBuffer::Strategy::Mmap :
-                   (strategy == "write") ? WritableBuffer::Strategy::Write :
-                   (strategy == "auto")  ? WritableBuffer::Strategy::Auto :
-                                           WritableBuffer::Strategy::Unknown;
-  if (sstrategy == WritableBuffer::Strategy::Unknown) {
-    throw TypeError() << "Parameter `_strategy` in Frame.to_jay() should be "
-        "one of 'mmap', 'write' or 'auto'; instead got '" << strategy << "'";
+  // method
+  auto str_method = args[1].to<std::string>("auto");
+  auto method = (str_method == "mmap") ? WritableBuffer::Strategy::Mmap :
+                (str_method == "write")? WritableBuffer::Strategy::Write :
+                (str_method == "auto") ? WritableBuffer::Strategy::Auto :
+                                         WritableBuffer::Strategy::Unknown;
+  if (method == WritableBuffer::Strategy::Unknown) {
+    throw TypeError() << "Parameter `method` in Frame.to_jay() should be "
+        "one of 'mmap', 'write' or 'auto'; instead got '" << str_method << "'";
   }
 
   if (filename.empty()) {
@@ -328,7 +329,7 @@ oobj Frame::to_jay(const PKArgs& args) {
     return oobj::from_new_reference(PyBytes_FromStringAndSize(data, size));
   }
   else {
-    dt->save_jay(filename, sstrategy);
+    dt->save_jay(filename, method);
     return None();
   }
 }
@@ -336,17 +337,18 @@ oobj Frame::to_jay(const PKArgs& args) {
 
 
 void Frame::_init_jay(XTypeMaker& xt) {
+  args_to_jay.add_synonym_arg("_strategy", "method");
   xt.add(METHOD(&Frame::to_jay, args_to_jay));
 
-  stype_to_jaytype[int(SType::BOOL)]    = jay::Type_Bool8;
-  stype_to_jaytype[int(SType::INT8)]    = jay::Type_Int8;
-  stype_to_jaytype[int(SType::INT16)]   = jay::Type_Int16;
-  stype_to_jaytype[int(SType::INT32)]   = jay::Type_Int32;
-  stype_to_jaytype[int(SType::INT64)]   = jay::Type_Int64;
-  stype_to_jaytype[int(SType::FLOAT32)] = jay::Type_Float32;
-  stype_to_jaytype[int(SType::FLOAT64)] = jay::Type_Float64;
-  stype_to_jaytype[int(SType::STR32)]   = jay::Type_Str32;
-  stype_to_jaytype[int(SType::STR64)]   = jay::Type_Str64;
+  stype_to_jaytype[int(dt::SType::BOOL)]    = jay::Type_Bool8;
+  stype_to_jaytype[int(dt::SType::INT8)]    = jay::Type_Int8;
+  stype_to_jaytype[int(dt::SType::INT16)]   = jay::Type_Int16;
+  stype_to_jaytype[int(dt::SType::INT32)]   = jay::Type_Int32;
+  stype_to_jaytype[int(dt::SType::INT64)]   = jay::Type_Int64;
+  stype_to_jaytype[int(dt::SType::FLOAT32)] = jay::Type_Float32;
+  stype_to_jaytype[int(dt::SType::FLOAT64)] = jay::Type_Float64;
+  stype_to_jaytype[int(dt::SType::STR32)]   = jay::Type_Str32;
+  stype_to_jaytype[int(dt::SType::STR64)]   = jay::Type_Str64;
 }
 
 

@@ -27,7 +27,9 @@
 #include <unordered_map>   // std::unordered_map
 #include <utility>         // std::pair, std::make_pair, std::move
 #include "../datatable/include/datatable.h"
+#include "call_logger.h"
 #include "csv/reader.h"
+#include "datatablemodule.h"
 #include "expr/head_func.h"
 #include "expr/head_reduce.h"
 #include "expr/py_by.h"              // py::oby
@@ -36,23 +38,23 @@
 #include "expr/py_update.h"          // py::oupdate
 #include "frame/py_frame.h"
 #include "frame/repr/html_widget.h"
+#include "ltype.h"
 #include "models/aggregator.h"
 #include "models/py_ftrl.h"
+#include "options.h"
 #include "parallel/api.h"
 #include "parallel/thread_pool.h"
 #include "progress/_options.h"
+#include "py_encodings.h"
 #include "python/_all.h"
 #include "python/string.h"
 #include "read/py_read_iterator.h"
+#include "sort.h"
 #include "utils/assert.h"
 #include "utils/macros.h"
 #include "utils/terminal/terminal.h"
 #include "utils/terminal/terminal_stream.h"
 #include "utils/terminal/terminal_style.h"
-#include "datatablemodule.h"
-#include "options.h"
-#include "sort.h"
-#include "py_encodings.h"
 #include "ztest.h"
 
 
@@ -188,8 +190,8 @@ static void _register_function(const py::PKArgs& args) {
 
   PyObject* fnref = std::move(fn).release();
   switch (n) {
-    case 2: init_py_stype_objs(fnref); break;
-    case 3: init_py_ltype_objs(fnref); break;
+    case 2: dt::init_py_stype_objs(fnref); break;
+    case 3: dt::init_py_ltype_objs(fnref); break;
     case 7: py::Frame_Type = fnref; break;
     case 9: py::Expr_Type = fnref; break;
     default: throw ValueError() << "Unknown index: " << n;
@@ -295,78 +297,10 @@ static void initialize_options(const py::PKArgs& args) {
   py::Frame::init_display_options();
   dt::read::GenericReader::init_options();
   sort_init_options();
+  dt::CallLogger::init_options();
 }
 
 
-
-
-
-//------------------------------------------------------------------------------
-// Support memory leak detection
-//------------------------------------------------------------------------------
-#if DT_DEBUG
-
-struct PtrInfo {
-  size_t alloc_size;
-  const char* name;
-
-  std::string to_string() {
-    std::ostringstream io;
-    io << name << "[" << alloc_size << "]";
-    return io.str();
-  }
-};
-
-static std::unordered_map<void*, PtrInfo> tracked_objects;
-static std::mutex track_mutex;
-
-
-void TRACK(void* ptr, size_t size, const char* name) {
-  std::lock_guard<std::mutex> lock(track_mutex);
-
-  if (tracked_objects.count(ptr)) {
-    std::cerr << "ERROR: Pointer " << ptr << " is already tracked. Old "
-        "pointer contains " << tracked_objects[ptr].to_string() << ", new: "
-        << (PtrInfo {size, name}).to_string();
-  }
-  tracked_objects.insert({ptr, PtrInfo {size, name}});
-}
-
-
-void UNTRACK(void* ptr) {
-  std::lock_guard<std::mutex> lock(track_mutex);
-
-  if (tracked_objects.count(ptr) == 0) {
-    // UNTRACK() is usually called from a destructor, so cannot throw any
-    // exceptions there. However, calling PyErr_*() will cause the python
-    // to raise SystemError once the control reaches python.
-    PyErr_SetString(PyExc_RuntimeError,
-                    "ERROR: Trying to remove pointer which is not tracked");
-  }
-  tracked_objects.erase(ptr);
-}
-
-
-bool IS_TRACKED(void* ptr) {
-  std::lock_guard<std::mutex> lock(track_mutex);
-  return (tracked_objects.count(ptr) > 0);
-}
-
-
-
-static py::PKArgs args_get_tracked_objects(
-    0, 0, 0, false, false, {}, "get_tracked_objects", nullptr);
-
-static py::oobj get_tracked_objects(const py::PKArgs&) {
-  py::odict res;
-  for (auto kv : tracked_objects) {
-    res.set(py::oint(reinterpret_cast<size_t>(kv.first)),
-            py::ostring(kv.second.to_string()));
-  }
-  return std::move(res);
-}
-
-#endif
 
 
 //------------------------------------------------------------------------------
@@ -389,6 +323,7 @@ void py::DatatableModule::init_methods() {
   init_methods_buffers();
   init_methods_cbind();
   init_methods_csv();
+  init_methods_ifelse();
   init_methods_isclose();
   init_methods_jay();
   init_methods_join();
@@ -409,9 +344,6 @@ void py::DatatableModule::init_methods() {
   #ifdef DTTEST
     init_tests();
   #endif
-  #if DT_DEBUG
-    ADD_FN(&get_tracked_objects, args_get_tracked_objects);
-  #endif
 }
 
 
@@ -429,7 +361,6 @@ extern "C" {
       // Initialize submodules
       if (!init_py_encodings(m)) return nullptr;
 
-      init_types();
       dt::expr::Head_Func::init();
 
       py::Frame::init_type(m);

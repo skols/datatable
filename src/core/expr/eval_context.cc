@@ -27,7 +27,9 @@
 #include "expr/py_update.h"
 #include "expr/workframe.h"
 #include "frame/py_frame.h"
+#include "ltype.h"
 #include "sort.h"
+#include "stype.h"
 namespace dt {
 namespace expr {
 

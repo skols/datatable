@@ -136,6 +136,8 @@ class _obj {
     oobj call(otuple args) const;
     oobj call(otuple args, odict kws) const;
     ostring str() const;
+    ostring repr() const;
+    ostring safe_repr() const;
     PyTypeObject* typeobj() const noexcept;  // borrowed ref
     std::string typestr() const;
     size_t get_sizeof() const;
@@ -161,6 +163,7 @@ class _obj {
     bool is_buffer()        const noexcept;
     bool is_by_node()       const noexcept;
     bool is_bytes()         const noexcept;
+    bool is_callable()      const noexcept;
     bool is_dict()          const noexcept;
     bool is_dtexpr()        const noexcept;
     bool is_ellipsis()      const noexcept;
@@ -254,7 +257,7 @@ class _obj {
 
     DataTable*  to_datatable      (const error_manager& = _em0) const;
     py::Frame*  to_pyframe        (const error_manager& = _em0) const;
-    SType       to_stype          (const error_manager& = _em0) const;
+    dt::SType   to_stype          (const error_manager& = _em0) const;
     py::ojoin   to_ojoin_lax      () const;
     py::oby     to_oby_lax        () const;
     py::osort   to_osort_lax      () const;
@@ -262,6 +265,7 @@ class _obj {
 
     PyObject*   to_pyobject_newref() const noexcept;
     PyObject*   to_borrowed_ref() const { return v; }
+    PyObject*   get() const { return v; }
 
     /**
      * `error_manager` is a factory function for different error messages. It

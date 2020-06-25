@@ -23,11 +23,13 @@
 #include <iostream>
 #include <errno.h>
 #include <string.h>
+#include "ltype.h"
 #include "parallel/api.h"
 #include "progress/progress_manager.h"
 #include "python/obj.h"
 #include "python/string.h"
 #include "python/tuple.h"
+#include "stype.h"
 #include "utils/assert.h"
 #include "utils/exceptions.h"
 
@@ -221,13 +223,13 @@ Error& Error::operator<<(const CErrno&) {
   return *this;
 }
 
-Error& Error::operator<<(SType stype) {
-  error << info(stype).name();
+Error& Error::operator<<(dt::SType stype) {
+  error << dt::stype_name(stype);
   return *this;
 }
 
-Error& Error::operator<<(LType ltype) {
-  error << info::ltype_name(ltype);
+Error& Error::operator<<(dt::LType ltype) {
+  error << dt::ltype_name(ltype);
   return *this;
 }
 
@@ -356,3 +358,26 @@ void Warning::emit() {
 Warning DeprecationWarning() { return Warning(PyExc_FutureWarning); }
 Warning DatatableWarning()   { init(); return Warning(DtWrn_DatatableWarning); }
 Warning IOWarning()          { init(); return Warning(DtWrn_IOWarning); }
+
+
+
+
+//------------------------------------------------------------------------------
+// HidePythonError
+//------------------------------------------------------------------------------
+
+HidePythonError::HidePythonError() {
+  if (PyErr_Occurred()) {
+    PyErr_Fetch(&ptype_, &pvalue_, &ptraceback_);
+  } else {
+    ptype_ = nullptr;
+    pvalue_ = nullptr;
+    ptraceback_ = nullptr;
+  }
+}
+
+HidePythonError::~HidePythonError() {
+  if (ptype_) {
+    PyErr_Restore(ptype_, pvalue_, ptraceback_);
+  }
+}

@@ -26,10 +26,12 @@
 #include "expr/py_sort.h"     // py::osort
 #include "expr/py_update.h"   // py::oupdate
 #include "frame/py_frame.h"
+#include "ltype.h"
 #include "python/_all.h"
 #include "python/list.h"
 #include "python/obj.h"
 #include "python/string.h"
+#include "stype.h"
 #include "utils/macros.h"
 
 namespace py {
@@ -121,7 +123,7 @@ oobj::oobj(oobj&& other) {
 oobj& oobj::operator=(const oobj& other) {
   PyObject* t = v;
   v = other.v;
-  Py_XINCREF(other.v);
+  Py_XINCREF(v);
   Py_XDECREF(t);
   return *this;
 }
@@ -195,6 +197,7 @@ bool _obj::is_ellipsis()      const noexcept { return (v == Py_Ellipsis); }
 bool _obj::is_true()          const noexcept { return (v == Py_True); }
 bool _obj::is_false()         const noexcept { return (v == Py_False); }
 bool _obj::is_bool()          const noexcept { return is_true() || is_false(); }
+bool _obj::is_callable()      const noexcept { return v && PyCallable_Check(v); }
 bool _obj::is_numeric()       const noexcept { return is_float() || is_int(); }
 bool _obj::is_list_or_tuple() const noexcept { return is_list() || is_tuple(); }
 bool _obj::is_int()           const noexcept { return v && PyLong_Check(v) && !is_bool(); }
@@ -202,8 +205,8 @@ bool _obj::is_float()         const noexcept { return v && PyFloat_Check(v); }
 bool _obj::is_string()        const noexcept { return v && PyUnicode_Check(v); }
 bool _obj::is_bytes()         const noexcept { return v && PyBytes_Check(v); }
 bool _obj::is_type()          const noexcept { return v && PyType_Check(v); }
-bool _obj::is_ltype()         const noexcept { return v && Py_TYPE(v) == py_ltype; }
-bool _obj::is_stype()         const noexcept { return v && Py_TYPE(v) == py_stype; }
+bool _obj::is_ltype()         const noexcept { return v && dt::is_ltype_object(v); }
+bool _obj::is_stype()         const noexcept { return v && dt::is_stype_object(v); }
 bool _obj::is_anytype()       const noexcept { return is_type() || is_stype() || is_ltype(); }
 bool _obj::is_list()          const noexcept { return v && PyList_Check(v); }
 bool _obj::is_tuple()         const noexcept { return v && PyTuple_Check(v); }
@@ -299,7 +302,7 @@ bool _obj::is_dtexpr() const noexcept {
 
 template <typename T>
 static inline bool _parse_none(PyObject* v, T* out) {
-  if (v == Py_None) { *out = GETNA<T>(); return true; }
+  if (v == Py_None) { *out = dt::GETNA<T>(); return true; }
   return false;
 }
 
@@ -463,7 +466,7 @@ bool _obj::parse_double(double* out) const {
 //------------------------------------------------------------------------------
 
 int8_t _obj::to_bool(const error_manager& em) const {
-  if (v == Py_None) return GETNA<int8_t>();
+  if (v == Py_None) return dt::GETNA<int8_t>();
   if (v == Py_True) return 1;
   if (v == Py_False) return 0;
   if (PyLong_CheckExact(v)) {
@@ -482,13 +485,13 @@ int8_t _obj::to_bool_strict(const error_manager& em) const {
 }
 
 int8_t _obj::to_bool_force(const error_manager&) const noexcept {
-  if (v == Py_None) return GETNA<int8_t>();
+  if (v == Py_None) return dt::GETNA<int8_t>();
   if (v == Py_True) return 1;
   if (v == Py_False) return 0;
   int r = PyObject_IsTrue(v);
   if (r >= 0) return static_cast<int8_t>(r);
   PyErr_Clear();
-  return GETNA<int8_t>();
+  return dt::GETNA<int8_t>();
 }
 
 
@@ -499,7 +502,7 @@ int8_t _obj::to_bool_force(const error_manager&) const noexcept {
 
 int32_t _obj::to_int32(const error_manager& em) const {
   constexpr int32_t MAX = std::numeric_limits<int32_t>::max();
-  if (is_none()) return GETNA<int32_t>();
+  if (is_none()) return dt::GETNA<int32_t>();
   if (!PyLong_Check(v)) {
     throw em.error_not_integer(v);
   }
@@ -529,7 +532,7 @@ int32_t _obj::to_int32_strict(const error_manager& em) const {
 
 int64_t _obj::to_int64(const error_manager& em) const {
   constexpr int64_t MAX = std::numeric_limits<int64_t>::max();
-  if (is_none()) return GETNA<int64_t>();
+  if (is_none()) return dt::GETNA<int64_t>();
   if (PyLong_Check(v)) {
     int overflow;
     #if DT_TYPE_LONG64
@@ -602,7 +605,7 @@ py::oint _obj::to_pyint_force(const error_manager&) const noexcept {
 
 double _obj::to_double(const error_manager& em) const {
   if (PyFloat_Check(v)) return PyFloat_AsDouble(v);
-  if (v == Py_None) return GETNA<double>();
+  if (v == Py_None) return dt::GETNA<double>();
   if (PyLong_Check(v)) {
     double res = PyLong_AsDouble(v);
     if (res == -1 && PyErr_Occurred()) {
@@ -799,12 +802,12 @@ py::Frame* _obj::to_pyframe(const error_manager& em) const {
 
 
 
-SType _obj::to_stype(const error_manager& em) const {
-  int s = stype_from_pyobject(v);
+dt::SType _obj::to_stype(const error_manager& em) const {
+  int s = dt::stype_from_pyobject(v);
   if (s == -1) {
     throw em.error_not_stype(v);
   }
-  return static_cast<SType>(s);
+  return static_cast<dt::SType>(s);
 }
 
 
@@ -993,6 +996,23 @@ ostring _obj::str() const {
 }
 
 
+ostring _obj::repr() const {
+  PyObject* reprobj = PyObject_Repr(v);
+  if (!reprobj) throw PyError();
+  return ostring::from_new_reference(reprobj);
+}
+
+
+ostring _obj::safe_repr() const {
+  PyObject* reprobj = PyObject_Repr(v);
+  if (!reprobj) {
+    PyErr_Clear();
+    return ostring("<?>");
+  }
+  return ostring::from_new_reference(reprobj);
+}
+
+
 PyTypeObject* _obj::typeobj() const noexcept {
   return Py_TYPE(v);
 }
@@ -1111,6 +1131,7 @@ robj rstderr() {
 
 void write_to_stdout(const std::string& str) {
   PyObject* py_stdout = rstdout().to_borrowed_ref();
+  HidePythonError h;
   oobj writer;
   if (py_stdout && py_stdout != Py_None) {
     writer = oobj::from_new_reference(

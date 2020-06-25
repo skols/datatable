@@ -34,6 +34,7 @@ class DatatableModule : public ExtModule<DatatableModule> {
     void init_methods_buffers();   // py_buffers.cc
     void init_methods_cbind();     // frame/cbind.cc
     void init_methods_csv();       // csv/py_csv.cc
+    void init_methods_ifelse();    // expr/head_func_ifelse.cc
     void init_methods_isclose();   // expr/head_func_isclose.cc
     void init_methods_jay();       // open_jay.cc
     void init_methods_join();      // frame/join.cc
@@ -59,20 +60,10 @@ class DatatableModule : public ExtModule<DatatableModule> {
 }  // namespace py
 
 
-#if DT_DEBUG
-  void TRACK(void* ptr, size_t size, const char* name);
-  void UNTRACK(void* ptr);
-  bool IS_TRACKED(void* ptr);
-#else
-  #define TRACK(ptr, size, name)
-  #define UNTRACK(ptr)
-  #define IS_TRACKED(ptr) 1
-#endif
-
 
 namespace pybuffers {
   extern size_t single_col;  // Declared in py_buffers
-  extern SType force_stype;
+  extern dt::SType force_stype;
 }
 
 

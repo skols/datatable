@@ -25,6 +25,9 @@
 #include <string>      // std::string
 #include "parallel/shared_mutex.h"
 #include "utils/file.h"
+#include "types.h"
+
+class Buffer;
 
 
 //==============================================================================
@@ -169,10 +172,26 @@ class ThreadsafeWritableBuffer : public WritableBuffer
 
 //==============================================================================
 
+
+
 class MemoryWritableBuffer : public ThreadsafeWritableBuffer
 {
+  class Writer {
+    MemoryWritableBuffer* mbuf_;
+    size_t pos_start_;
+    size_t pos_end_;
+
+    public:
+      Writer(MemoryWritableBuffer* parent, size_t start, size_t end);
+      Writer(const Writer&) = delete;
+      Writer(Writer&&);
+      ~Writer();
+
+      void write_at(size_t offset, const char* content, size_t len);
+  };
+
   public:
-    MemoryWritableBuffer(size_t size);
+    MemoryWritableBuffer(size_t size = 0);
     ~MemoryWritableBuffer() override;
 
     // Return memory buffer that was written. This method may only be
@@ -184,6 +203,10 @@ class MemoryWritableBuffer : public ThreadsafeWritableBuffer
     // will start from the beginning. This method does not actually
     // erase any data, nor does any reallocation.
     void clear();
+
+    void* data() const;
+
+    Writer writer(size_t start, size_t end);
 
   private:
     void realloc(size_t newsize) override;

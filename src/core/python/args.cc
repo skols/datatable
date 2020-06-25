@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------
-// Copyright 2018-2019 H2O.ai
+// Copyright 2018-2020 H2O.ai
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -21,9 +21,9 @@
 //------------------------------------------------------------------------------
 #include <algorithm>       // std::min
 #include <cstring>         // std::strrchr
+#include "call_logger.h"
 #include "python/args.h"
 #include "utils/assert.h"
-
 namespace py {
 
 
@@ -45,29 +45,51 @@ PKArgs::PKArgs(
     n_all_args(npo + npk + nko),
     has_varargs(vargs),
     has_varkwds(vkwds),
+    has_renamed_args(false),
     arg_names(_names),
     n_varkwds(0)
 {
   wassert(n_all_args == arg_names.size());
+  wassert(has_varargs? n_pos_kwd_args == 0 : true);
 
-  if (has_varargs) {
-    xassert(n_pos_kwd_args == 0);
-  }
-  
   bound_args.resize(n_all_args);
   for (size_t i = 0; i < n_all_args; ++i) {
     bound_args[i].init(i, this);
   }
 }
 
+
 PKArgs::~PKArgs() {
   delete[] full_name;
+}
+
+
+void PKArgs::add_synonym_arg(const char* new_name, const char* old_name) {
+  constexpr size_t NPOS = size_t(-1);
+  has_renamed_args = true;
+  size_t iold = NPOS;
+  size_t inew = NPOS;
+  for (size_t i = 0; i < arg_names.size(); ++i) {
+    const char* name = arg_names[i];
+    if (std::strcmp(name, old_name) == 0) iold = i;
+    if (std::strcmp(name, new_name) == 0) inew = i;
+  }
+  xassert(iold != NPOS);  // make sure that `old_name` exists
+  xassert(inew == NPOS);  (void)inew;
+  PyObject* py_new_name = PyUnicode_FromString(new_name);
+  xassert(py_new_name);
+  kwd_map[py_new_name] = iold;
 }
 
 
 void PKArgs::set_class_name(const char* name) {
   const char* p = std::strrchr(name, '.');
   cls_name = p? p + 1 : name;
+}
+
+const char* PKArgs::get_class_name() const {
+  xassert(cls_name);
+  return cls_name;
 }
 
 const char* PKArgs::get_short_name() const {
@@ -177,6 +199,7 @@ void PKArgs::bind(PyObject* _args, PyObject* _kwds)
 PyObject* PKArgs::exec_function(
     PyObject* args, PyObject* kwds, oobj (*func)(const PKArgs&)) noexcept
 {
+  auto cl = dt::CallLogger::function(this, args, kwds);
   try {
     bind(args, kwds);
     oobj res = func(*this);
@@ -193,6 +216,7 @@ PyObject* PKArgs::exec_function(
 PyObject* PKArgs::exec_function(
     PyObject* args, PyObject* kwds, void (*func)(const PKArgs&)) noexcept
 {
+  auto cl = dt::CallLogger::function(this, args, kwds);
   try {
     bind(args, kwds);
     func(*this);
@@ -249,6 +273,15 @@ size_t PKArgs::_find_kwd(PyObject* kwd) {
       Py_INCREF(kwd);
       kwd_map[kwd] = i;
       return i;
+    }
+  }
+  if (has_renamed_args) {
+    for (const auto& pair : kwd_map) {
+      if (PyUnicode_Compare(kwd, pair.first) == 0) {
+        Py_INCREF(kwd);
+        kwd_map[kwd] = pair.second;
+        return pair.second;
+      }
     }
   }
   return size_t(-1);

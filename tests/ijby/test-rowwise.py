@@ -36,6 +36,22 @@ stypes_str = ltype.str.stypes
 
 
 
+def test_reprs():
+    # Check that row-expressions can be repr'd without errors
+    assert repr(rowall())
+    assert repr(rowany())
+    assert repr(rowsum())
+    assert repr(rowcount())
+    assert repr(rowmin())
+    assert repr(rowmax())
+    assert repr(rowfirst())
+    assert repr(rowlast())
+    assert repr(rowmean())
+    assert repr(rowsd())
+
+
+
+
 #-------------------------------------------------------------------------------
 # rowall()
 #-------------------------------------------------------------------------------
@@ -161,10 +177,11 @@ def test_rowfirstlast_strs(st):
                                  ["b", "x", "last"]], stype=st))
 
 
-def test_rowfirstlast_incompatible():
-    DT = dt.Frame(A=["a", "b", "c"], B=[1, 3, 4])
-    with pytest.raises(TypeError, match="Incompatible column types"):
-        assert DT[:, rowfirst(f[:])]
+def test_rowfirstlast_incompatible_types():
+    DT = dt.Frame([["a", None, "c", None], [1, 3, 4, None]])
+    assert_equals(DT[:, rowfirst(f[:])],
+                  dt.Frame(["a", "3", "c", None]))
+
 
 
 
@@ -264,7 +281,7 @@ def test_rowsd_floats():
     assert_equals(RES, dt.Frame([std1, None, std3, None]))
 
 
-def test_rowmean_wrong_types():
+def test_rowsd_wrong_types():
     DT = dt.Frame(A=[3, 5, 6], B=["a", "d", "e"])
     with pytest.raises(TypeError, match="Function rowsd expects a sequence "
                                         "of numeric columns"):

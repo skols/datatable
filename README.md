@@ -1,5 +1,5 @@
 <!---
-  Copyright 2018 H2O.ai
+  Copyright 2018-2020 H2O.ai
 
   Permission is hereby granted, free of charge, to any person obtaining a
   copy of this software and associated documentation files (the "Software"),
@@ -34,9 +34,8 @@ put specific emphasis on speed and big data support. As the name suggests, the
 package is closely related to R's [data.table][] and attempts to mimic its core
 algorithms and API.
 
-Currently `datatable` is in the Alpha stage and is undergoing active
-development. The API may be unstable; some of the core features are incomplete
-and/or missing. Python 3.5+ is required.
+Currently `datatable` is in the Beta stage and undergoing active development.
+Some of the features may still be missing. Python 3.5+ is required.
 
 
 ## Project goals
@@ -96,10 +95,12 @@ the following:
 
 ## Installation
 
-On MacOS and Linux systems installing datatable is as easy as
+On macOS and Linux systems installing datatable is as easy as
 ```sh
 pip install datatable
 ```
+
+As of version 0.11.0, `datatable` will also be available on Windows.
 
 On all other platforms a source distribution will be needed. For more
 information see [Build instructions](https://datatable.readthedocs.io/en/latest/install.html).

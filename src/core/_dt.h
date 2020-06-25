@@ -28,6 +28,7 @@
 
 typedef struct _object     PyObject;
 typedef struct _typeobject PyTypeObject;
+typedef struct bufferinfo  Py_buffer;
 
 class Buffer;
 class Column;
@@ -40,8 +41,10 @@ class TemporaryFile;
 class WritableBuffer;
 
 struct CString;
-enum class LType : uint8_t;
-enum class SType : uint8_t;
+namespace dt {
+  enum class LType : uint8_t;
+  enum class SType : uint8_t;
+}
 
 using std::size_t;
 using dtptr = std::unique_ptr<DataTable>;
@@ -109,9 +112,10 @@ namespace read {
   class InputColumn;
   class PreFrame;
   class ThreadContext;
+
+  void parse_string(const dt::read::ParseContext&);
 }}
 class FreadReader;
-void parse_string(dt::read::ParseContext&);
 
 
 #endif

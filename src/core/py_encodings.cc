@@ -1,10 +1,25 @@
 //------------------------------------------------------------------------------
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright 2018-2020 H2O.ai
 //
-// © H2O.ai 2018
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+// IN THE SOFTWARE.
 //------------------------------------------------------------------------------
+#include <cstring>
 #include "py_encodings.h"
 #include "utils/assert.h"
 
@@ -34,6 +49,11 @@ int decode_win1252(const uint8_t* src, int len, uint8_t* dest) {
   return decode_sbcs(src, len, dest, win1252_map);
 }
 
+int decode_win1252(const char* src, int len, char* dest) {
+  return decode_sbcs(reinterpret_cast<const uint8_t*>(src), len,
+                     reinterpret_cast<uint8_t*>(dest), win1252_map);
+}
+
 int decode_win1251(const uint8_t* src, int len, uint8_t* dest) {
   return decode_sbcs(src, len, dest, win1251_map);
 }
@@ -53,7 +73,7 @@ int init_py_encodings(PyObject*) {
       if (i < 0x80) {
         xassert(map[i] == i);  // check ASCII compatibility
       }
-      
+
       if (i && map[i] == 0) map[i] = 0x00BDBFEF;  // U+FFFD
       xassert((map[i] & 0xFF000000) == 0);
     }

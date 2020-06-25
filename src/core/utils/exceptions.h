@@ -64,8 +64,8 @@ public:
   Error& operator<<(uint32_t);
   Error& operator<<(float);
   Error& operator<<(double);
-  Error& operator<<(SType);
-  Error& operator<<(LType);
+  Error& operator<<(dt::SType);
+  Error& operator<<(dt::LType);
   Error& operator<<(const CErrno&);
   Error& operator<<(const py::_obj&);
   Error& operator<<(const py::ostring&);
@@ -141,6 +141,31 @@ class Warning : public Error {
 Warning DatatableWarning();
 Warning DeprecationWarning();
 Warning IOWarning();
+
+
+
+
+//------------------------------------------------------------------------------
+// HidePythonError
+//------------------------------------------------------------------------------
+
+/**
+  * Guardian-type class that will temporarily hide the current
+  * python error (if any), restoring it when the object goes out of
+  * scope.
+  */
+class HidePythonError {
+  private:
+    PyObject* ptype_;
+    PyObject* pvalue_;
+    PyObject* ptraceback_;
+
+  public:
+    HidePythonError();
+    ~HidePythonError();
+};
+
+
 
 
 #endif

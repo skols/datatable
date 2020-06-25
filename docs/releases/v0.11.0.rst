@@ -16,6 +16,9 @@
     columns in the Frame. This allows the Frame to be used in contexts where
     an iterable might be expected.
 
+  -[new] Added ability to cast string columns into numeric types: int, float
+    or boolean. [#1313]
+
   -[enh] String columns now support comparison operators ``<``, ``>``, ``<=``
     and ``>=``. [#2274]
 
@@ -52,6 +55,13 @@
     an ``obj64`` column was created instead. The new behavior is more
     consistent with fread's behavior when reading CSV files.
 
+  -[api] Expression `f[:]` now excludes groupby columns when used in a
+    groupby context. [#2460]
+
+  -[api] Parameters ``_strategy=`` in :meth:`.to_csv()` and :meth:`.to_jay()`
+    were renamed into ``method=``. The old parameter name still works, so this
+    change is not breaking.
+
   -[bug] Deleting a key from the Frame (``del DT.key``) no longer causes a
     seg.fault. [#2357]
 
@@ -68,13 +78,12 @@
   -[bug] Fixed crash when writing to CSV a frame with many boolean columns
     when the option ``quoting="all"`` is used. [#2382]
 
+  -[bug] It is no longer allowed to combine ``compression="gzip"`` and
+    ``append=True`` in :meth:`.to_csv()`.
+
 
   Fread
   -----
-
-  -[fix] When reading Excel files, the cells with datetime or boolean types
-    are now handled correctly, in particular a datetime value is converted
-    into its string representation. [#1701]
 
   -[new] Added new function :func:`iread()`, which is similar to
     :func:`fread()`, but suitable for reading multiple sources at once. The
@@ -99,6 +108,11 @@
     single-threaded. The parameter accepts any value available via the standard
     python library ``codecs``. [#2395]
 
+  -[new] Added parameter ``memory_limit`` which instructs fread to try to limit
+    the amount of memory used when reading the input. This parameter is
+    especially useful when reading files that are larger than the amount of
+    available memory. [#1750]
+
   -[enh] Added parameter ``multiple_sources`` which controls fread's
     behavior when multiple input sources are detected (for example, if you
     pass a name of an archive, and the archive contains multiple files).
@@ -106,6 +120,14 @@
 
   -[enh] Fread now displays a progress bar when downloading data from a URL.
     [#2441]
+
+  -[enh] Fread now computes NA counts of all data while reading, storing
+    them in per-column stats. For integer and floating point columns we also
+    compute min/max value in each column. [#1097]
+
+  -[fix] When reading Excel files, the cells with datetime or boolean types
+    are now handled correctly, in particular a datetime value is converted
+    into its string representation. [#1701]
 
   -[fix] Fread now properly detects ``\r``-newlines in the presence of fields
     with quoted ``\n``-newlines. [#1343]
@@ -119,11 +141,26 @@
   -------
   .. ref-context:: datatable
 
+  -[new] datatable is now fully supported on Windows.
+
   -[new] Added exception :exc:`InvalidOperationError`, which can be used to
     signal when an operation is requested that would be illegal for the given
     combination of parameters.
 
-  -[enh] Datatable no longer has modules ``blessed`` and ``typesentry`` as
+  -[new] New option ``dt.options.debug.enabled`` will report all calls to the
+    internal C++ core functions, together with their timings. This may help
+    identify performance bottlenecks, or help troubleshooting user scripts.
+
+    Additional options ``debug.logger``, ``debug.report_args`` and
+    ``debug.max_arg_size`` allow more granular control over the logging
+    process. [#2452]
+
+  -[new] Function ``ifelse(cond, expr_if_true, expr_if_false)`` can return
+    one of the two values based on the condition. [#2411] ::
+
+        DT["max(x,y)"] = ifelse(f.x >= f.y, f.x, f.y)
+
+  -[enh] datatable no longer has modules ``blessed`` and ``typesentry`` as
     dependencies. [#1677] [#1535]
 
   -[enh] Added 2 new fields into the ``dt.build_info`` struct: ``.git_date``

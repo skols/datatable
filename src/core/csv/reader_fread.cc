@@ -20,12 +20,14 @@
 // IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include <iomanip>
+#include "column.h"
 #include "csv/reader_fread.h"    // FreadReader
+#include "py_encodings.h"        // decode_win1252, check_escaped_string, ...
+#include "read/chunk_coordinates.h"
 #include "read/parse_context.h"  // dt::read::ParseContext
+#include "stype.h"
 #include "utils/logger.h"
 #include "utils/misc.h"          // wallclock
-#include "column.h"
-#include "py_encodings.h"        // decode_win1252, check_escaped_string, ...
 
 #define D() if (verbose) d()
 
@@ -58,7 +60,6 @@ dt::read::ParseContext FreadReader::makeTokenizer() const
   dt::read::ParseContext res;
   res.ch = nullptr;
   res.target = nullptr;
-  res.anchor = nullptr;
   res.eof = eof;
   res.NAstrings = na_strings;
   res.whiteChar = whiteChar;
@@ -481,14 +482,13 @@ int64_t FreadReader::parse_single_line(dt::read::ParseContext& fctx)
   const char*& tch = fctx.ch;
 
   // detect blank lines
-  fctx.anchor = tch;
   fctx.skip_whitespace_at_line_start();
   if (tch == eof || fctx.skip_eol()) return 0;
 
   size_t ncols = preframe.ncols();
   size_t j = 0;
   dt::read::InputColumn dummy_col;
-  dummy_col.force_ptype(dt::read::PT::Str32);
+  dummy_col.set_rtype(dt::read::RT::RStr32);
 
   while (true) {
     auto& col = j < ncols ? preframe.column(j) : dummy_col;
@@ -678,7 +678,7 @@ void FreadReader::detect_column_types()
  * Detect whether the first line in input is the header or not.
  */
 void FreadReader::detect_header() {
-  if (!ISNA<int8_t>(header)) return;
+  if (!dt::ISNA<int8_t>(header)) return;
   size_t ncols = preframe.ncols();
   int64_t sncols = static_cast<int64_t>(ncols);
 
@@ -838,7 +838,13 @@ void FreadReader::skip_preamble() {
     fctx.skip_whitespace_at_line_start();
     if (fctx.skip_eol()) continue;
     if (comment_char == '\xFF') {
-      if (*ch == '#' || *ch == '%') comment_char = *ch;
+      if (*ch == '#' || *ch == '%' || *ch == ';') {
+        char c = ch+1 < eof? ch[1] : ' ';
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+            c == '-' || c == '=' || c == '~' || c == '*') {
+          comment_char = *ch;
+        }
+      }
     }
     if (*ch == comment_char) {
       comment_lines++;
@@ -886,42 +892,21 @@ void FreadReader::parse_column_names(dt::read::ParseContext& ctx) {
     while (*ch == ' ' || *ch == '\t') ch++;
   }
 
-  uint8_t echar = quoteRule == 0? static_cast<uint8_t>(quote) :
-                  quoteRule == 1? '\\' : 0xFF;
-
   size_t ncols = preframe.ncols();
   size_t ncols_found;
   for (size_t i = 0; ; ++i) {
     // Parse string field, but do not advance `ctx.target`: on the next
     // iteration we will write into the same place.
-    parse_string(ctx);
-    const char* start = ctx.anchor + ctx.target->str32.offset;
+    dt::read::parse_string(ctx);
+    auto start = static_cast<const char*>(ctx.strbuf.rptr())
+                 + ctx.target->str32.offset;
     int32_t ilen = ctx.target->str32.length;
-    size_t zlen = static_cast<size_t>(ilen);
 
     if (i >= ncols) {
       preframe.set_ncols(i + 1);
     }
     if (ilen > 0) {
-      const uint8_t* usrc = reinterpret_cast<const uint8_t*>(start);
-      int res = check_escaped_string(usrc, zlen, echar);
-      if (res == 0) {
-        preframe.column(i).set_name(std::string(start, zlen));
-      } else {
-        char* newsrc = new char[zlen * 4];
-        uint8_t* unewsrc = reinterpret_cast<uint8_t*>(newsrc);
-        int newlen;
-        if (res == 1) {
-          newlen = decode_escaped_csv_string(usrc, ilen, unewsrc, echar);
-        } else {
-          newlen = decode_win1252(usrc, ilen, unewsrc);
-          newlen = decode_escaped_csv_string(unewsrc, newlen, unewsrc, echar);
-        }
-        xassert(newlen > 0);
-        zlen = static_cast<size_t>(newlen);
-        preframe.column(i).set_name(std::string(newsrc, zlen));
-        delete[] newsrc;
-      }
+      preframe.column(i).set_name(std::string(start, start + ilen));
     }
     // Skip the separator, handling special case of sep=' ' (multiple spaces are
     // treated as a single separator, and spaces at the beginning/end of line

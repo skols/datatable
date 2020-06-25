@@ -1,9 +1,23 @@
 //------------------------------------------------------------------------------
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright 2018-2020 H2O.ai
 //
-// © H2O.ai 2018-2019
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+// IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include <cstdio>
 #include "python/arg.h"
@@ -27,14 +41,19 @@ Arg::Arg()
   : pos(0), parent(nullptr), pyobj(nullptr) {}
 
 Arg::Arg(py::_obj py_object, const std::string& cached_name_)
-  : pyobj(py_object.to_borrowed_ref()), cached_name(cached_name_) {}
-
+  : pos(0),
+    parent(nullptr),
+    pyobj(py_object.to_borrowed_ref()),
+    cached_name(cached_name_) {}
 
 Arg::Arg(const std::string& cached_name_)
-  : pyobj(nullptr), cached_name(cached_name_) {}
-
+  : pos(0),
+    parent(nullptr),
+    pyobj(nullptr),
+    cached_name(cached_name_) {}
 
 Arg::~Arg() {}
+
 
 void Arg::init(size_t i, PKArgs* args) {
   pos = i;
@@ -86,6 +105,11 @@ bool Arg::is_pandas_frame()      const { return pyobj.is_pandas_frame(); }
 bool Arg::is_pandas_series()     const { return pyobj.is_pandas_series(); }
 bool Arg::is_numpy_array()       const { return pyobj.is_numpy_array(); }
 
+bool Arg::is_auto() const {
+  return pyobj.is_string() &&
+         PyUnicode_CompareWithASCIIString(pyobj.get(), "auto") == 0;
+}
+
 
 
 //------------------------------------------------------------------------------
@@ -104,15 +128,15 @@ py::rdict   Arg::to_rdict()        const { return pyobj.to_rdict(*this); }
 py::otuple  Arg::to_otuple()       const { return pyobj.to_otuple(*this); }
 std::string Arg::to_string()       const { return pyobj.to_string(*this); }
 strvec      Arg::to_stringlist()   const { return pyobj.to_stringlist(*this); }
-SType       Arg::to_stype()        const { return pyobj.to_stype(*this); }
-SType       Arg::to_stype(const error_manager& em) const { return pyobj.to_stype(em); }
+dt::SType   Arg::to_stype()        const { return pyobj.to_stype(*this); }
+dt::SType   Arg::to_stype(const error_manager& em) const { return pyobj.to_stype(em); }
 py::oiter   Arg::to_oiter()        const { return pyobj.to_oiter(*this); }
 DataTable*  Arg::to_datatable()    const { return pyobj.to_datatable(*this); }
 
 Arg::operator int32_t() const { return to_int32_strict(); }
 Arg::operator int64_t() const { return to_int64_strict(); }
 Arg::operator size_t()  const { return to_size_t(); }
-Arg::operator SType()   const { return to_stype(); }
+Arg::operator dt::SType() const { return to_stype(); }
 
 
 //------------------------------------------------------------------------------

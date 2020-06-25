@@ -21,8 +21,8 @@
 //------------------------------------------------------------------------------
 #ifndef dt_READ_PARSE_CONTEXT_h
 #define dt_READ_PARSE_CONTEXT_h
-#include "read/field64.h"            // field64
-#include "read/parallel_reader.h"    // ChunkCoordinates
+#include "buffer.h"
+#include "_dt.h"
 namespace dt {
 namespace read {
 
@@ -46,14 +46,15 @@ struct ParseContext
   // up to but excluding `eof` may be accessed by a parser.
   const char* eof;
 
-  // Where to write the parsed value. The pointer will be incremented after
-  // each successful read.
-  field64* target;
+  // Where to write the parsed value.
+  mutable field64* target;
 
-  // Anchor pointer for string parser, this pointer is the starting point
-  // relative to which `str32.offset` is defined.
-  const char* anchor;
+  // Buffer where string parser will be saving its data. Theoretically,
+  // some other parsers may store their values in here too.
+  mutable Buffer strbuf;
+  mutable size_t bytes_written;
 
+  // TODO: remove from here
   const char* const* NAstrings;
 
   // what to consider as whitespace to skip: ' ', '\t' or 0 means both
@@ -83,16 +84,23 @@ struct ParseContext
   // Whether to consider a standalone '\r' a newline character
   bool cr_is_newline;
 
-  void skip_whitespace();
-  void skip_whitespace_at_line_start();
-  bool at_end_of_field();
-  const char* end_NA_string(const char*);
-  int countfields();
-  bool skip_eol();
 
-  bool next_good_line_start(
-    const ChunkCoordinates& cc, int ncols, bool fill,
-    bool skipEmptyLines);
+  public:
+    ParseContext();
+    ParseContext(const ParseContext& o);
+    ParseContext& operator=(const ParseContext& o);
+
+    void skip_whitespace() const;
+    void skip_whitespace_at_line_start() const;
+    bool at_end_of_field() const;
+    const char* end_NA_string(const char*) const;
+    bool is_na_string(const char* start, const char* end) const;
+    int countfields() const;
+    bool skip_eol() const;
+
+    bool next_good_line_start(
+      const ChunkCoordinates& cc, int ncols, bool fill,
+      bool skipEmptyLines) const;
 };
 
 

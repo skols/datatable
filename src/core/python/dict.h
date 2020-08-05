@@ -21,8 +21,9 @@
 //------------------------------------------------------------------------------
 #ifndef dt_PYTHON_DICT_h
 #define dt_PYTHON_DICT_h
+#include <iterator>        // std::input_iterator_tag
 #include "python/obj.h"
-
+#include "python/python.h"
 namespace py {
 class dict_iterator;
 

@@ -25,13 +25,8 @@
 #include <vector>
 #include "column/npmasked.h"
 #include "python/_all.h"
-#include "python/list.h"
-#include "python/oset.h"
-#include "python/string.h"
 #include "utils/alloc.h"
 #include "stype.h"
-#include "ztest.h"
-
 namespace py {
 
 
@@ -405,7 +400,11 @@ class FrameInitializationManager {
         py::otuple index {py::oslice(na, na, na), py::oint(na)};
         size_t i = 0;
         for (auto col : pdcols) {
-          if (!names_arg) colnames.append(col.to_pystring_force());
+          if (!names_arg) {
+            py::oobj pyname = col.to_pystring_force();
+            if (!pyname) pyname = py::None();
+            colnames.append(std::move(pyname));
+          }
           index.replace(1, py::oint(i++));
           py::oobj colsrc = pd_iloc.get_item(index).get_attr("values");
           make_column(colsrc, dt::SType::VOID);
@@ -417,7 +416,9 @@ class FrameInitializationManager {
         xassert(src.is_pandas_series());
         check_names_count(1);
         if (!names_arg) {
-          colnames.append(pdsrc.get_attr("name").to_pystring_force());
+          py::oobj pyname = pdsrc.get_attr("name").to_pystring_force();
+          if (!pyname) pyname = py::None();
+          colnames.append(std::move(pyname));
         }
         py::oobj colsrc = pdsrc.get_attr("values");
         make_column(colsrc, dt::SType::VOID);
@@ -667,11 +668,6 @@ class FrameInitializationManager {
     void make_datatable(const DataTable* names_src) {
       frame->dt = new DataTable(std::move(cols), *names_src);
     }
-
-
-    #ifdef DTTEST
-      friend void dttest::cover_init_FrameInitializationManager_em();
-    #endif
 };
 
 
@@ -749,27 +745,3 @@ void Frame::_init_init(XTypeMaker& xt) {
 
 
 }  // namespace py
-
-
-
-//------------------------------------------------------------------------------
-// Testing
-//------------------------------------------------------------------------------
-
-// This test ensures coverage for `_ZN2py26FrameInitializationManager2emD0Ev`
-// symbol. See https://stackoverflow.com/questions/46447674 for details.
-#ifdef DTTEST
-namespace dttest {
-
-  void cover_init_FrameInitializationManager_em() {
-    auto t = new py::FrameInitializationManager::em;
-    delete t;
-  }
-
-}
-#endif
-
-// Two lines in the file are marked as LCOV_EXCL_LINE: these lines are related
-// to auto-generated exception-handling code, and they are not covered because
-// those exceptions are almost impossible to trigger.
-// See https://stackoverflow.com/questions/46367192

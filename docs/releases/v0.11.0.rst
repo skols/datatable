@@ -19,8 +19,14 @@
   -[new] Added ability to cast string columns into numeric types: int, float
     or boolean. [#1313]
 
-  -[enh] String columns now support comparison operators ``<``, ``>``, ``<=``
+  -[new] String columns now support comparison operators ``<``, ``>``, ``<=``
     and ``>=``. [#2274]
+
+  -[new] String columns can now be added together, similarly to how strings
+    can be added in Python. [#1839]
+
+  -[new] Added a new function :func:`cut()` to bin numeric data
+   to equal-width discrete intervals.
 
   -[enh] Method :meth:`Frame.colindex()` now accepts a column selector
     f-expression as an argument.
@@ -50,7 +56,7 @@
     given a numeric column index outside of the allowed range. Previously it
     was throwing a ``ValueError`` in both cases.
 
-  -[api] When creating a Frame from a list containing mixed integers / floats
+  -[api] When creating a Frame from a list containing mixed integers/floats
     and strings, the resulting Frame will now have stype ``str32``. Previously
     an ``obj64`` column was created instead. The new behavior is more
     consistent with fread's behavior when reading CSV files.
@@ -62,24 +68,27 @@
     were renamed into ``method=``. The old parameter name still works, so this
     change is not breaking.
 
-  -[bug] Deleting a key from the Frame (``del DT.key``) no longer causes a
+  -[fix] Deleting a key from the Frame (``del DT.key``) no longer causes a
     seg.fault. [#2357]
 
-  -[bug] Casting a 0-row ``str32`` column into ``str64`` stype no longer goes
+  -[fix] Casting a 0-row ``str32`` column into ``str64`` stype no longer goes
     into an infinite loop. [#2369]
 
-  -[bug] Fixed creation of a ``str64`` column from a python list of strings
+  -[fix] Fixed creation of a ``str64`` column from a python list of strings
     when the total size of all strings is greater than 2GB. [#2368]
 
-  -[bug] Rbinding several ``str32`` columns such that their combined string
+  -[fix] Rbinding several ``str32`` columns such that their combined string
     buffers have size over 2GB now properly creates a ``str64`` column as a
     result. [#2367]
 
-  -[bug] Fixed crash when writing to CSV a frame with many boolean columns
+  -[fix] Fixed crash when writing to CSV a frame with many boolean columns
     when the option ``quoting="all"`` is used. [#2382]
 
-  -[bug] It is no longer allowed to combine ``compression="gzip"`` and
+  -[fix] It is no longer allowed to combine ``compression="gzip"`` and
     ``append=True`` in :meth:`.to_csv()`.
+
+  -[fix] Empty strings no longer get confused with NA strings in
+    :meth:`.replace()`. [#2502]
 
 
   Fread
@@ -132,6 +141,9 @@
   -[fix] Fread now properly detects ``\r``-newlines in the presence of fields
     with quoted ``\n``-newlines. [#1343]
 
+  -[fix] Opening Jay file from a bytes object now produces a Frame that
+    remains valid even after the bytes object is deleted. [#2547]
+
   -[api] Function :func:`fread()` now always returns a single Frame object;
     previously it could return a dict of Frames if multiple sources were
     detected. Use :func:`iread()` if you need to read multi-source input.
@@ -168,6 +180,10 @@
     datatable was built, and ``.git_diff`` which will be non-empty for builds
     from code that was modified compared to the git revision they are based on.
 
+  -[enh] During a fork the thread pool will now shut down completely, together
+    with the monitor thread. The threads will then restart in both the parent
+    and the child, when needed. [#2438]
+
   -[fix] Internal function :func:`frame_column_data_r` now works properly with
     virtual columns. [#2269]
 
@@ -183,6 +199,9 @@
 
   -[fix] Column names containing backticks now display properly in error
     messages. [#2406]
+
+  -[fix] Fixed rare race condition when multiple threads tried to throw an
+    exception at the same time. [#2526]
 
   -[api] All exceptions thrown by datatable are now declared in the
     ``datatable.exceptions`` module. These exceptions are now organized to
@@ -203,13 +222,25 @@
   -[enh] :attr:`.nepochs`, the number of epochs to train the model, can now
     be a float rather than an integer.
 
+  -[fix] Fixed inconsistency in progress reporting. [#2520]
+
 
   .. contributors::
 
-    39  @st-pasha
-    20  @oleksiyskononenko
+    109 @st-pasha
+    47  @oleksiyskononenko
+    1   @jfaccioni           <Juliano Faccioni>
     1   @mmalohlava
     1   @bboe                <Bryce Boe>
     --
-    11  @st-pasha
-    4   @oleksiyskononenko
+    34  @st-pasha
+    8   @oleksiyskononenko
+    6   @arnocandel
+    2   @jangorecki
+    1   @ben519              <Ben Gorman>
+    1   @surenH2oai          <Suren Mohanathas>
+    1   @myamullaciencia     <Mallesham Yamulla>
+    1   @ashrith             <Ashrith Barthur>
+    1   @mmalohlava
+    1   @Viktor-Demin
+    1   @chrinide            <Chrinide>

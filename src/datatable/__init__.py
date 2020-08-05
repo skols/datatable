@@ -26,6 +26,7 @@ from .expr import (mean, min, max, sd, isna, sum, count, first, abs, exp,
 from .lib._datatable import (
     by,
     cbind,
+    cut,
     fread,
     ifelse,
     init_styles,
@@ -52,12 +53,12 @@ from .lib._datatable import (
     unique,
     update,
 )
-from .options import options
 from .str import split_into_nhot
 from .types import stype, ltype
 import datatable.math
 import datatable.internal
 import datatable.exceptions
+import datatable.options
 try:
     from ._build_info import build_info
     __version__ = build_info.version
@@ -72,6 +73,7 @@ __all__ = (
     "corr",
     "count",
     "cov",
+    "cut",
     "dt",
     "exp",
     "f",
@@ -101,8 +103,19 @@ __all__ = (
     "options",
     "rbind",
     "repeat",
+    "rowall",
+    "rowany",
+    "rowcount",
+    "rowfirst",
+    "rowlast",
+    "rowmax",
+    "rowmean",
+    "rowmin",
+    "rowsd",
+    "rowsum",
     "sd",
     "setdiff",
+    "shift",
     "sort",
     "split_into_nhot",
     "str32",
@@ -128,6 +141,9 @@ dt = datatable
 # This will run only in Jupyter notebook
 init_styles()
 
+options = datatable.options.Config(options={}, prefix="")
+datatable.lib._datatable.initialize_options(options)
+datatable.lib._datatable.initialize_final()
 
 def open(path):
     """

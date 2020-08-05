@@ -1,23 +1,35 @@
 //------------------------------------------------------------------------------
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright 2018-2020 H2O.ai
 //
-// © H2O.ai 2018
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+// IN THE SOFTWARE.
 //------------------------------------------------------------------------------
 #include "python/list.h"
+#include "python/python.h"
 #include "utils/assert.h"
 #include "utils/exceptions.h"
 #include "utils/macros.h"
-
 namespace py {
 
 
 //------------------------------------------------------------------------------
 // Constructors
 //------------------------------------------------------------------------------
-
-olist::olist() : oobj(nullptr) {}
 
 olist::olist(size_t n) {
   is_list = true;
@@ -30,28 +42,8 @@ olist::olist(int n) : olist(static_cast<size_t>(n)) {}
 olist::olist(int64_t n) : olist(static_cast<size_t>(n)) {}
 
 
-olist::olist(const olist& other) : oobj(other) {
-  is_list = other.is_list;
-}
-
-olist::olist(olist&& other) : oobj(std::move(other)) {
-  is_list = other.is_list;
-}
-
-olist& olist::operator=(const olist& other) {
-  oobj::operator=(other);
-  is_list = other.is_list;
-  return *this;
-}
-
-olist& olist::operator=(olist&& other) {
-  oobj::operator=(std::move(other));
-  is_list = other.is_list;
-  return *this;
-}
-
-olist::olist(PyObject* src) : oobj(src) {
-  is_list = src && PyList_Check(src);
+olist::olist(const robj& src) : oobj(src) {
+  is_list = v && PyList_Check(v);
 }
 
 
@@ -107,6 +99,7 @@ void olist::set(int i, oobj&& value) {
 }
 
 void olist::append(const _obj& value) {
+  xassert(value);
   int ret = PyList_Append(v, value.to_borrowed_ref());
   if (ret == -1) throw PyError();
 }

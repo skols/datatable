@@ -30,6 +30,7 @@
 #include "ltype.h"
 #include "models/murmurhash.h"
 #include "parallel/api.h"
+#include "parallel/shared_mutex.h"
 #include "python/_all.h"
 #include "python/string.h"
 #include "rowindex.h"
@@ -158,10 +159,10 @@ double Stats::get_stat_double(Stat stat, bool* isvalid) {
 }
 
 
-CString Stats::get_stat_string(Stat stat, bool* isvalid) {
+dt::CString Stats::get_stat_string(Stat stat, bool* isvalid) {
   switch (stat) {
     case Stat::Mode: return mode_string(isvalid);
-    default:         return _invalid<CString>(isvalid);
+    default:         return _invalid<dt::CString>(isvalid);
   }
 }
 
@@ -178,13 +179,13 @@ bool Stats::get_stat(Stat stat, size_t* out) {
   return ret;
 }
 
-bool Stats::get_stat(Stat stat, double* out)   {
+bool Stats::get_stat(Stat stat, double* out) {
   bool ret;
   *out = get_stat_double(stat, &ret);
   return ret;
 }
 
-bool Stats::get_stat(Stat stat, CString* out)  {
+bool Stats::get_stat(Stat stat, dt::CString* out)  {
   bool ret;
   *out = get_stat_string(stat, &ret);
   return ret;
@@ -267,7 +268,7 @@ int64_t Stats::mode_int   (bool* isvalid) { return _invalid<int64_t>(isvalid); }
 double  Stats::min_double (bool* isvalid) { return _invalid<double>(isvalid); }
 double  Stats::max_double (bool* isvalid) { return _invalid<double>(isvalid); }
 double  Stats::mode_double(bool* isvalid) { return _invalid<double>(isvalid); }
-CString Stats::mode_string(bool* isvalid) { return _invalid<CString>(isvalid); }
+dt::CString Stats::mode_string(bool* isvalid) { return _invalid<dt::CString>(isvalid); }
 
 template <typename T>
 int64_t NumericStats<T>::min_int(bool* isvalid) {
@@ -323,10 +324,10 @@ double NumericStats<T>::mode_double(bool* isvalid) {
   return static_cast<double>(_mode);
 }
 
-CString StringStats::mode_string(bool* isvalid) {
+dt::CString StringStats::mode_string(bool* isvalid) {
   if (!is_computed(Stat::Mode)) compute_sorted_stats();
   _fill_validity_flag(Stat::Mode, isvalid);
-  return _mode;
+  return dt::CString(mode_);
 }
 
 
@@ -368,7 +369,7 @@ void Stats::set_stat(Stat stat, double value, bool isvalid) {
   }
 }
 
-void Stats::set_stat(Stat stat, const CString& value, bool isvalid) {
+void Stats::set_stat(Stat stat, const dt::CString& value, bool isvalid) {
   switch (stat) {
     case Stat::Mode: return set_mode(value, isvalid);
     default: throw RuntimeError() << "Incorrect stat " << stat_name(stat);
@@ -409,7 +410,7 @@ void Stats::set_max(int64_t, bool)  { throw RuntimeError(); }
 void Stats::set_max(double, bool)   { throw RuntimeError(); }
 void Stats::set_mode(int64_t, bool) { throw RuntimeError(); }
 void Stats::set_mode(double, bool)  { throw RuntimeError(); }
-void Stats::set_mode(CString, bool) { throw RuntimeError(); }
+void Stats::set_mode(const dt::CString&, bool) { throw RuntimeError(); }
 
 
 template <typename T>
@@ -484,8 +485,8 @@ void NumericStats<T>::set_mode(double value, bool isvalid) {
   set_valid(Stat::Mode, isvalid);
 }
 
-void StringStats::set_mode(CString value, bool isvalid) {
-  _mode = value;
+void StringStats::set_mode(const dt::CString& value, bool isvalid) {
+  mode_ = value.to_string();
   set_valid(Stat::Mode, isvalid);
 }
 
@@ -527,11 +528,11 @@ void BooleanStats::compute_nacount() {
 }
 
 void StringStats::compute_nacount() {
-  set_nacount(_compute_nacount<CString>(column), true);
+  set_nacount(_compute_nacount<dt::CString>(column), true);
 }
 
 void PyObjectStats::compute_nacount() {
-  set_nacount(_compute_nacount<py::robj>(column), true);
+  set_nacount(_compute_nacount<py::oobj>(column), true);
 }
 
 
@@ -613,16 +614,14 @@ void NumericStats<T>::compute_nunique() {
 
 
 struct StrHasher {
-  size_t operator()(const CString& s) const {
-    return hash_murmur2(s.ch, static_cast<size_t>(s.size));
+  size_t operator()(const dt::CString& s) const {
+    return hash_murmur2(s.data(), s.size());
   }
 };
 
 struct StrEqual {
-  bool operator()(const CString& lhs, const CString& rhs) const {
-    return (lhs.size == rhs.size) &&
-           ((lhs.ch == rhs.ch) ||  // This ensures NAs are properly handled too
-            (std::strncmp(lhs.ch, rhs.ch, static_cast<size_t>(lhs.size)) == 0));
+  bool operator()(const dt::CString& lhs, const dt::CString& rhs) const {
+    return (lhs == rhs);
   }
 };
 
@@ -632,7 +631,7 @@ void BooleanStats::compute_nunique() {
 
 void StringStats::compute_nunique() {
   dt::shared_bmutex rwmutex;
-  phmap::parallel_flat_hash_set<CString, StrHasher, StrEqual> values_seen;
+  phmap::parallel_flat_hash_set<dt::CString, StrHasher, StrEqual> values_seen;
 
   size_t batch_size = 8;
   size_t nbatches = (column->nrows() + batch_size - 1) / batch_size;
@@ -641,17 +640,17 @@ void StringStats::compute_nunique() {
     [&](size_t i) {
       size_t j0 = i * batch_size;
       size_t j1 = std::min(j0 + batch_size, column->nrows());
-      CString str;
+      dt::CString cstr;
       for (size_t j = j0; j < j1; ++j) {
-        bool isvalid = column->get_element(j, &str);
+        bool isvalid = column->get_element(j, &cstr);
         if (!isvalid) continue;
         {
           dt::shared_lock<dt::shared_bmutex> lock(rwmutex, false);
-          if (values_seen.contains(str)) continue;
+          if (values_seen.contains(cstr)) continue;
         }
         {
           dt::shared_lock<dt::shared_bmutex> lock(rwmutex, true);
-          values_seen.insert(str);
+          values_seen.insert(std::move(cstr));
         }
       }
     });
@@ -977,7 +976,7 @@ void StringStats::compute_sorted_stats() {
   // we did not yet compute the NA count for the column, we can do so now by
   // checking whether the elements in the first group are NA or not.
   if (!is_computed(Stat::NaCount)) {
-    CString x0;
+    dt::CString x0;
     size_t ri0;
     bool isvalid = (ri.size() == 0) ||
                    (ri.get_element(0, &ri0) &&
@@ -1000,7 +999,7 @@ void StringStats::compute_sorted_stats() {
   }
 
   size_t ig = static_cast<size_t>(groups[largest_group_index]);
-  CString mode_value;
+  dt::CString mode_value;
   size_t ri_ig;
   bool mode_valid = max_group_size &&
                     ri.get_element(ig, &ri_ig) &&
@@ -1172,9 +1171,20 @@ std::unique_ptr<Stats> RealStats<T>::clone()    const { return this->_clone(this
 template <typename T>
 std::unique_ptr<Stats> IntegerStats<T>::clone() const { return this->_clone(this); }
 std::unique_ptr<Stats> BooleanStats::clone()    const { return this->_clone(this); }
-std::unique_ptr<Stats> StringStats::clone()     const { return this->_clone(this); }
 std::unique_ptr<Stats> PyObjectStats::clone()   const { return this->_clone(this); }
 
+// StringStats contains a `std::string` object, which cannot be copied
+// using memcpy.
+std::unique_ptr<Stats> StringStats::clone() const {
+  auto res = std::make_unique<StringStats>(column);
+  res->_computed = this->_computed;
+  res->_valid    = this->_valid;
+  res->_countna  = this->_countna;
+  res->_nunique  = this->_nunique;
+  res->_nmodal   = this->_nmodal;
+  res->mode_     = this->mode_;  // copy string
+  return std::move(res);
+}
 
 
 
@@ -1207,7 +1217,7 @@ static void check_stat(Stat stat, Stats* curr_stats, Stats* new_stats) {
       "valid=" << isvalid1 << " in the Stats object, but was valid=" << isvalid2
       << " upon re-checking";
   }
-  if (isvalid1 && !_equal(value1, value2)) {
+  if (isvalid1 && !_equal<dt::ref_t<T>>(value1, value2)) {
     throw AssertionError() << "Stat " << stat_name(stat) << "'s value is "
       << value1 << ", but it was " << value2 << " upon recalculation";
   }
@@ -1243,7 +1253,7 @@ void Stats::verify_integrity(const dt::ColumnImpl* col) {
   check_stat<int64_t>(Stat::Min, this, new_stats.get());
   check_stat<int64_t>(Stat::Max, this, new_stats.get());
   check_stat<int64_t>(Stat::Mode, this, new_stats.get());
-  check_stat<CString>(Stat::Mode, this, new_stats.get());
+  check_stat<dt::CString>(Stat::Mode, this, new_stats.get());
 }
 
 
@@ -1282,7 +1292,7 @@ py::oobj Stats::get_stat_as_pyobject(Stat stat) {
         case dt::LType::BOOL:
         case dt::LType::INT:  return pywrap_stat<int64_t>(stat);
         case dt::LType::REAL: return pywrap_stat<double>(stat);
-        case dt::LType::STRING: return pywrap_stat<CString>(stat);
+        case dt::LType::STRING: return pywrap_stat<dt::CString>(stat);
         default: return py::None();
       }
     }
@@ -1311,19 +1321,21 @@ static Column _make_nacol(dt::SType stype) {
   return Column::new_na_column(1, stype);
 }
 
-static Column _make_column_str(CString value) {
+static Column _make_column_str(const dt::CString& value) {
   using T = uint32_t;
   Buffer mbuf = Buffer::mem(sizeof(T) * 2);
   Buffer strbuf;
-  if (value.size >= 0) {
-    size_t len = static_cast<size_t>(value.size);
+  if (value.isna()) {
+    mbuf.set_element<T>(0, 0);
+    mbuf.set_element<T>(1, dt::GETNA<T>());
+  } else {
+    size_t len = value.size();
     mbuf.set_element<T>(0, 0);
     mbuf.set_element<T>(1, static_cast<T>(len));
     strbuf.resize(len);
-    std::memcpy(strbuf.wptr(), value.ch, len);
-  } else {
-    mbuf.set_element<T>(0, 0);
-    mbuf.set_element<T>(1, dt::GETNA<T>());
+    if (len) {
+      std::memcpy(strbuf.wptr(), value.data(), len);
+    }
   }
   return Column::new_string_column(1, std::move(mbuf), std::move(strbuf));
 }
@@ -1338,7 +1350,7 @@ Column Stats::colwrap_stat(Stat stat, dt::SType stype) {
 }
 
 Column Stats::strcolwrap_stat(Stat stat) {
-  CString value;
+  dt::CString value;
   bool isvalid = get_stat(stat, &value);
   return isvalid? _make_column_str(value)
                 : _make_nacol(column->stype());
@@ -1372,7 +1384,7 @@ Column Stats::get_stat_as_column(Stat stat) {
         case dt::SType::FLOAT64: return colwrap_stat<double, double>(stat, dt::SType::FLOAT64);
         case dt::SType::STR32:
         case dt::SType::STR64:   return strcolwrap_stat(stat);
-        default:             return _make_nacol(column->stype());
+        default:                 return _make_nacol(column->stype());
       }
     }
     default:

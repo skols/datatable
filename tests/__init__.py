@@ -10,7 +10,17 @@ import pytest
 import random
 import sys
 from math import isnan
+from datatable.lib import core
 from datatable.internal import frame_columns_virtual, frame_integrity_check
+
+
+
+cpp_test = pytest.mark.skipif(not hasattr(core, "get_test_suites"),
+                              reason="C++ tests were not compiled")
+
+skip_on_jenkins = pytest.mark.skipif(os.environ.get("DT_HARNESS") == "Jenkins",
+                                     reason="Skipped on Jenkins")
+
 
 
 # Try importing _datatable (core lib), so that if that doesn't work we don't
@@ -210,3 +220,14 @@ def assert_value_error(f, msg):
 
 def isview(frame):
     return any(frame_columns_virtual(frame))
+
+
+def get_core_tests(suite):
+    # This must be a function, so that `n` is properly captured within
+    def param(n):
+        return pytest.param(lambda: n, id=n)
+
+    if hasattr(core, "get_test_suites"):
+        return [param(n) for n in core.get_tests_in_suite(suite)]
+    else:
+        return [pytest.param(lambda: pytest.skip("C++ tests not compiled"))]

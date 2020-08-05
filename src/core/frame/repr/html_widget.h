@@ -21,6 +21,7 @@
 //------------------------------------------------------------------------------
 #ifndef dt_FRAME_REPR_HTML_WIDGET_h
 #define dt_FRAME_REPR_HTML_WIDGET_h
+#include <algorithm>                   // std::min
 #include "frame/repr/widget.h"
 #include "ltype.h"
 #include "python/_all.h"
@@ -245,20 +246,20 @@ class HtmlWidget : public dt::Widget {
       CString val;
       bool isvalid = col.get_element(row, &val);
       if (isvalid) {
-        _render_escaped_string(val.ch, static_cast<size_t>(val.size));
+        _render_escaped_string(val.data(), val.size());
       } else {
         _render_na();
       }
     }
 
     void _render_obj_value(const Column& col, size_t row) {
-      py::robj val;
+      py::oobj val;
       bool isvalid = col.get_element(row, &val);
       if (isvalid) {
         // Should we use repr() here instead?
         py::ostring strval = val.to_pystring_force();
         CString cstr = strval.to_cstring();
-        _render_escaped_string(cstr.ch, static_cast<size_t>(cstr.size));
+        _render_escaped_string(cstr.data(), cstr.size());
       } else {
         _render_na();
       }

@@ -18,7 +18,6 @@
 #include <memory>           // std::unique_ptr
 #include "buffer.h"         // Buffer
 #include "column.h"
-#include "types.h"          // CString
 #include "writebuf.h"       // WritableBuffer
 
 template <typename T> class SentinelStr_ColumnImpl;
@@ -52,6 +51,8 @@ class writable_string_col {
 
     class buffer {
       public:
+        CString tmp_str;
+
         buffer();
         virtual ~buffer();
         virtual void write(const char* ch, size_t len) = 0;

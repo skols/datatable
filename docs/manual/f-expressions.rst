@@ -1,8 +1,8 @@
 
 .. _f-expressions:
 
-`f`-expressions
-===============
+``f``-expressions
+=================
 
 The ``datatable`` module exports a special symbol ``f``, which can be used
 to refer to the columns of a frame currently being operated on. If this sounds
@@ -19,7 +19,7 @@ For example, consider the expression::
 
 By itself, it just means *a column named "price", in an unspecified frame*.
 This expression becomes concrete, however, when used with a particular frame.
-For example,::
+For example::
 
     train_dt[f.price > 0, :]
 
@@ -66,8 +66,8 @@ an error.
 
 This square-bracket form is also useful when you want to access a column
 dynamically, i.e. if its name is not known in advance. For example, suppose
-there is a frame with columns "2017_01", "2017_02", ..., "2019_12". Then
-all these columns can be addressed as::
+there is a frame with columns ``"2017_01"``, ``"2017_02"``, ..., ``"2019_12"``.
+Then all these columns can be addressed as::
 
     [f["%d_%02d" % (year, month)]
      for month in range(1, 13)

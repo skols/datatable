@@ -21,15 +21,16 @@
 //------------------------------------------------------------------------------
 #include <algorithm>           // std::min
 #include <cerrno>              // errno
+#include <cstring>             // std::strerror, std::memcpy
 #include <mutex>               // std::mutex, std::lock_guard
+#include "buffer.h"
+#include "mmm.h"               // MemoryMapWorker, MemoryMapManager
 #include "python/pybuffer.h"   // py::buffer
 #include "utils/alloc.h"       // dt::malloc, dt::realloc
-#include "utils/exceptions.h"  // ValueError, MemoryError
 #include "utils/macros.h"
 #include "utils/misc.h"        // malloc_size
 #include "utils/temporary_file.h"
-#include "buffer.h"
-#include "mmm.h"               // MemoryMapWorker, MemoryMapManager
+#include "writebuf.h"
 
 #if DT_OS_WINDOWS
   #include <windows.h>         // SYSTEM_INFO, GetSystemInfo
@@ -303,7 +304,7 @@ class Memory_BufferImpl : public BufferImpl
   * This class represents a piece of memory owned by some external
   * entity. The lifetime of the memory region may be guarded by a
   * Py_buffer object. However, it is also possible to wrap a
-  * completely unguarded memory range, in which cast it is the
+  * completely unguarded memory range, in which case it is the
   * responsibility of the user to ensure that the memory remains
   * valid during the lifetime of External_BufferImpl object.
   */
@@ -313,23 +314,19 @@ class External_BufferImpl : public BufferImpl
     std::unique_ptr<py::buffer> pybufinfo_;
 
   public:
-    External_BufferImpl(const void* ptr, size_t n,
-                        std::unique_ptr<py::buffer>&& pybuf)
-    {
-      XAssert(ptr || n == 0);
-      data_ = const_cast<void*>(ptr);
-      size_ = n;
-      pybufinfo_ = std::move(pybuf);
-      resizable_ = false;
-      writable_ = false;
-    }
-
     External_BufferImpl(const void* ptr, size_t n) {
       XAssert(ptr || n == 0);
       data_ = const_cast<void*>(ptr);
       size_ = n;
       resizable_ = false;
       writable_ = false;
+    }
+
+    External_BufferImpl(const void* ptr, size_t n,
+                        std::unique_ptr<py::buffer>&& pybuf)
+      : External_BufferImpl(ptr, n)
+    {
+      pybufinfo_ = std::move(pybuf);
     }
 
     External_BufferImpl(void* ptr, size_t n)
@@ -351,6 +348,40 @@ class External_BufferImpl : public BufferImpl
 
     void to_memory(Buffer& out) override {
       if (pybufinfo_) out = Buffer::copy(data_, size_);
+    }
+};
+
+
+
+
+//------------------------------------------------------------------------------
+// PyBytes_BufferImpl
+//------------------------------------------------------------------------------
+
+/**
+  * This class represents a piece of memory owned by a python `bytes`
+  * object. In theory, this class can also work with memoryview or
+  * bytesarray objects as well, but since those are mutable, it could
+  * potentially be dangerous.
+  */
+class PyBytes_BufferImpl : public BufferImpl {
+  private:
+    py::oobj owner_;
+
+  public:
+    PyBytes_BufferImpl(const py::oobj& src) {
+      xassert(src.is_bytes() || src.is_string());
+      dt::CString cstr = src.to_cstring();
+      data_ = const_cast<char*>(cstr.data());
+      size_ = cstr.size() + 1;  // for last \0 byte
+      resizable_ = false;
+      writable_ = false;
+      owner_ = src;
+    }
+
+    size_t memory_footprint() const noexcept override {
+      // All memory is owned externally
+      return sizeof(PyBytes_BufferImpl) + size_;
     }
 };
 
@@ -701,20 +732,23 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
   Buffer::Buffer(BufferImpl*&& impl)
     : impl_(impl) {}
 
-  Buffer::Buffer()
-    : Buffer(new Memory_BufferImpl(0)) {}
+  Buffer::Buffer() noexcept
+    : impl_(nullptr) {}
 
-  Buffer::Buffer(const Buffer& other)
-    : impl_(other.impl_->acquire()) {}
+  Buffer::Buffer(const Buffer& other) noexcept {
+    impl_ = other.impl_;
+    if (impl_) impl_->acquire();
+  }
 
-  Buffer::Buffer(Buffer&& other) {
+  Buffer::Buffer(Buffer&& other) noexcept {
     impl_ = other.impl_;
     other.impl_ = nullptr;
   }
 
   Buffer& Buffer::operator=(const Buffer& other) {
     auto old_impl = impl_;
-    impl_ = other.impl_->acquire();
+    impl_ = other.impl_;
+    if (impl_) impl_->acquire();
     if (old_impl) old_impl->release();
     return *this;
   }
@@ -764,6 +798,10 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
               ptr, n, std::make_unique<py::buffer>(std::move(pb))));
   }
 
+  Buffer Buffer::pybytes(const py::oobj& src) {
+    return Buffer(new PyBytes_BufferImpl(src));
+  }
+
   Buffer Buffer::view(const Buffer& src, size_t n, size_t offset) {
     return Buffer(new View_BufferImpl(src.impl_, n, offset));
   }
@@ -790,30 +828,30 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
   }
 
   bool Buffer::is_writable() const {
-    return impl_->is_writable();
+    return impl_? impl_->is_writable() : false;
   }
 
   bool Buffer::is_resizable() const {
-    return impl_->is_resizable();
+    return impl_? impl_->is_resizable() : true;
   }
 
   bool Buffer::is_pyobjects() const {
-    return impl_->contains_pyobjects_;
+    return impl_? impl_->contains_pyobjects_ : false;
   }
 
   size_t Buffer::size() const {
-    return impl_->size();
+    return impl_? impl_->size() : 0;
   }
 
   size_t Buffer::memory_footprint() const noexcept {
-    return sizeof(Buffer) + impl_->memory_footprint();
+    return sizeof(Buffer) + (impl_? impl_->memory_footprint() : 0);
   }
 
 
   //---- Main data accessors ---------------------
 
   const void* Buffer::rptr() const {
-    return impl_->data();
+    return impl_? impl_->data() : nullptr;
   }
 
   const void* Buffer::rptr(size_t offset) const {
@@ -822,6 +860,7 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
 
   void* Buffer::wptr() {
     if (!is_writable()) materialize();
+    xassert(impl_);
     return impl_->data();
   }
 
@@ -842,7 +881,7 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
   //---- Buffer manipulators ----------------
 
   Buffer& Buffer::set_pyobjects(bool clear_data) {
-    xassert(impl_->size() % sizeof(PyObject*) == 0);
+    xassert(impl_ && impl_->size() % sizeof(PyObject*) == 0);
     size_t n = impl_->size() / sizeof(PyObject*);
     if (clear_data) {
       PyObject** data = static_cast<PyObject**>(xptr());
@@ -857,7 +896,9 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
 
 
   Buffer& Buffer::resize(size_t newsize, bool keep_data) {
-    xassert(impl_);
+    if (!impl_) {
+      impl_ = new Memory_BufferImpl(newsize);
+    }
     size_t oldsize = impl_->size();
     if (newsize != oldsize) {
       if (is_resizable()) {
@@ -900,6 +941,7 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
 
 
   void Buffer::to_memory() {
+    xassert(impl_);
     impl_->to_memory(*this);
   }
 
@@ -908,12 +950,13 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
   //---- Utility functions -----------------------
 
   void Buffer::verify_integrity() const {
-    XAssert(impl_);
-    impl_->verify_integrity();
+    if (impl_) {
+      impl_->verify_integrity();
+    }
   }
 
   void Buffer::materialize() {
-    size_t s = impl_->size();
+    size_t s = size();
     materialize(s, s);
   }
 
@@ -922,20 +965,22 @@ class Mmap_BufferImpl : public BufferImpl, MemoryMapWorker {
     auto newimpl = new Memory_BufferImpl(newsize);
     // No exception can occur after this point, and `newimpl` will be
     // safely stored in variable `this->impl_`.
-    if (copysize) {
-      std::memcpy(newimpl->data(), impl_->data(), copysize);
+    if (impl_) {
+      if (copysize) {
+        std::memcpy(newimpl->data(), impl_->data(), copysize);
+      }
+      if (impl_->contains_pyobjects_) {
+        newimpl->contains_pyobjects_ = true;
+        auto newdata = static_cast<PyObject**>(newimpl->data());
+        size_t n_new = newsize / sizeof(PyObject*);
+        size_t n_copy = copysize / sizeof(PyObject*);
+        size_t i = 0;
+        for (; i < n_copy; ++i) Py_INCREF(newdata[i]);
+        for (; i < n_new; ++i) newdata[i] = Py_None;
+        Py_None->ob_refcnt += n_new - n_copy;
+      }
+      impl_->release();  // noexcept
     }
-    if (impl_->contains_pyobjects_) {
-      newimpl->contains_pyobjects_ = true;
-      auto newdata = static_cast<PyObject**>(newimpl->data());
-      size_t n_new = newsize / sizeof(PyObject*);
-      size_t n_copy = copysize / sizeof(PyObject*);
-      size_t i = 0;
-      for (; i < n_copy; ++i) Py_INCREF(newdata[i]);
-      for (; i < n_new; ++i) newdata[i] = Py_None;
-      Py_None->ob_refcnt += n_new - n_copy;
-    }
-    impl_->release();  // noexcept
     impl_ = newimpl;
     xassert(impl_->refcount_ == 1);
   }

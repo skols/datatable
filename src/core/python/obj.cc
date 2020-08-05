@@ -21,6 +21,7 @@
 //------------------------------------------------------------------------------
 #include <iostream>
 #include <cstdint>            // INT32_MAX
+#include "cstring.h"          // dt::CString
 #include "expr/py_by.h"       // py::oby
 #include "expr/py_join.h"     // py::ojoin
 #include "expr/py_sort.h"     // py::osort
@@ -178,7 +179,7 @@ oobj oobj::wrap(int64_t val) { return py::oint(val); }
 oobj oobj::wrap(size_t val)  { return py::oint(val); }
 oobj oobj::wrap(float val)   { return py::ofloat(val); }
 oobj oobj::wrap(double val)  { return py::ofloat(val); }
-oobj oobj::wrap(const CString& val) { return py::ostring(val); }
+oobj oobj::wrap(const dt::CString& val) { return py::ostring(val); }
 oobj oobj::wrap(const robj& val) { return py::oobj(val); }
 
 
@@ -645,10 +646,13 @@ py::ofloat _obj::to_pyfloat_force(const error_manager&) const noexcept {
 // String conversions
 //------------------------------------------------------------------------------
 
-CString _obj::to_cstring(const error_manager& em) const {
+dt::CString _obj::to_cstring(const error_manager& em) const {
   Py_ssize_t str_size;
   const char* str;
 
+  if (v == Py_None || v == nullptr) {
+    return dt::CString();
+  }
   if (PyUnicode_Check(v)) {
     str = PyUnicode_AsUTF8AndSize(v, &str_size);
     if (!str) throw PyError();  // e.g. MemoryError
@@ -657,34 +661,32 @@ CString _obj::to_cstring(const error_manager& em) const {
     str_size = PyBytes_Size(v);
     str = PyBytes_AsString(v);
   }
-  else if (v == Py_None) {
-    str_size = 0;
-    str = nullptr;
-  }
   else {
     throw em.error_not_string(v);
   }
-  return CString { str, static_cast<int64_t>(str_size) };
+  return dt::CString(str, static_cast<size_t>(str_size));
 }
 
 
 std::string _obj::to_string(const error_manager& em) const {
-  CString cs = to_cstring(em);
-  return cs.ch? std::string(cs.ch, static_cast<size_t>(cs.size)) :
-                std::string();
+  dt::CString cs = to_cstring(em);
+  return cs.to_string();
 }
 
 
 py::ostring _obj::to_pystring_force(const error_manager&) const noexcept {
-  if (PyUnicode_Check(v) || v == Py_None) {
-    return py::ostring(v);
+  if (v == Py_None || v == nullptr) {
+    return py::ostring();
   }
-  PyObject* w = PyObject_Str(v);
-  if (!w) {
+  if (PyUnicode_Check(v)) {
+    return py::ostring(py::robj(v));
+  }
+  PyObject* res = PyObject_Str(v);  // new reference
+  if (!res) {
     PyErr_Clear();
-    w = nullptr;
+    return py::ostring();
   }
-  return py::ostring(w);
+  return py::ostring(oobj::from_new_reference(res));
 }
 
 
@@ -696,7 +698,7 @@ py::ostring _obj::to_pystring_force(const error_manager&) const noexcept {
 py::olist _obj::to_pylist(const error_manager& em) const {
   if (is_none()) return py::olist(nullptr);
   if (is_list() || is_tuple()) {
-    return py::olist(v);
+    return py::olist(py::robj(v));
   }
   throw em.error_not_list(v);
 }
@@ -992,24 +994,26 @@ oobj _obj::call(otuple args, odict kws) const {
 
 
 ostring _obj::str() const {
-  return ostring::from_new_reference(PyObject_Str(v));
+  PyObject* res = PyObject_Str(v);
+  if (!res) throw PyError();
+  return ostring(oobj::from_new_reference(res));
 }
 
 
 ostring _obj::repr() const {
-  PyObject* reprobj = PyObject_Repr(v);
-  if (!reprobj) throw PyError();
-  return ostring::from_new_reference(reprobj);
+  PyObject* res = PyObject_Repr(v);
+  if (!res) throw PyError();
+  return ostring(oobj::from_new_reference(res));
 }
 
 
 ostring _obj::safe_repr() const {
-  PyObject* reprobj = PyObject_Repr(v);
-  if (!reprobj) {
+  PyObject* res = PyObject_Repr(v);
+  if (!res) {
     PyErr_Clear();
     return ostring("<?>");
   }
-  return ostring::from_new_reference(reprobj);
+  return ostring(oobj::from_new_reference(res));
 }
 
 
@@ -1024,6 +1028,10 @@ std::string _obj::typestr() const {
 
 size_t _obj::get_sizeof() const {
   return _PySys_GetSizeOf(v);
+}
+
+size_t _obj::get_refcount() const {
+  return static_cast<size_t>(Py_REFCNT(v));
 }
 
 

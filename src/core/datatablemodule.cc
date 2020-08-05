@@ -51,11 +51,43 @@
 #include "read/py_read_iterator.h"
 #include "sort.h"
 #include "utils/assert.h"
+#include "utils/exceptions.h"
 #include "utils/macros.h"
 #include "utils/terminal/terminal.h"
 #include "utils/terminal/terminal_stream.h"
 #include "utils/terminal/terminal_style.h"
-#include "ztest.h"
+
+
+
+static_assert(INTPTR_MAX == INT64_MAX,
+              "Only 64 bit platforms are supported.");
+
+static_assert(sizeof(void*) == 8, "Expected size(void*) to be 8 bytes");
+static_assert(sizeof(void*) == sizeof(size_t),
+              "size(size_t) != size(void*)");
+static_assert(sizeof(void*) == sizeof(int64_t),
+              "size(int64_t) != size(void*)");
+
+static_assert(sizeof(int8_t) == 1, "int8_t should be 1-byte");
+static_assert(sizeof(int16_t) == 2, "int16_t should be 2-byte");
+static_assert(sizeof(int32_t) == 4, "int32_t should be 4-byte");
+static_assert(sizeof(int64_t) == 8, "int64_t should be 8-byte");
+static_assert(sizeof(float) == 4, "float should be 4-byte");
+static_assert(sizeof(double) == 8, "double should be 8-byte");
+static_assert(sizeof(char) == sizeof(unsigned char), "char != uchar");
+static_assert(sizeof(char) == 1, "sizeof(char) != 1");
+
+static_assert(sizeof(dt::LType) == 1, "LType does not fit in a byte");
+static_assert(sizeof(dt::SType) == 1, "SType does not fit in a byte");
+
+static_assert(static_cast<unsigned>(-1) - static_cast<unsigned>(-3) == 2,
+              "Unsigned arithmetics check");
+static_assert(3u - (0-1u) == 4u, "Unsigned arithmetics check");
+static_assert(0-1u == 0xFFFFFFFFu, "Unsigned arithmetics check");
+
+static_assert(sizeof(int64_t) == sizeof(Py_ssize_t),
+              "int64_t and Py_ssize_t should refer to the same type");
+
 
 
 
@@ -291,13 +323,21 @@ static void initialize_options(const py::PKArgs& args) {
   if (!options) return;
 
   dt::use_options_store(options);
-  dt::thread_pool::init_options();
+  dt::ThreadPool::init_options();
   dt::progress::init_options();
   py::Frame::init_names_options();
   py::Frame::init_display_options();
   dt::read::GenericReader::init_options();
   sort_init_options();
   dt::CallLogger::init_options();
+}
+
+
+static py::PKArgs args_initialize_final(
+  0, 0, 0, false, false, {}, "initialize_final", "");
+
+static void initialize_final(const py::PKArgs&) {
+  init_exceptions();
 }
 
 
@@ -315,6 +355,7 @@ void py::DatatableModule::init_methods() {
   ADD_FN(&frame_integrity_check, args_frame_integrity_check);
   ADD_FN(&get_thread_ids, args_get_thread_ids);
   ADD_FN(&initialize_options, args_initialize_options);
+  ADD_FN(&initialize_final, args_initialize_final);
   ADD_FN(&compiler_version, args_compiler_version);
   ADD_FN(&regex_supported, args_regex_supported);
   ADD_FN(&apply_color, args_apply_color);
@@ -323,6 +364,7 @@ void py::DatatableModule::init_methods() {
   init_methods_buffers();
   init_methods_cbind();
   init_methods_csv();
+  init_methods_cut();
   init_methods_ifelse();
   init_methods_isclose();
   init_methods_jay();
@@ -335,7 +377,6 @@ void py::DatatableModule::init_methods() {
   init_methods_str();
   init_methods_styles();
 
-  init_casts();
   init_fbinary();
   init_fnary();
   init_funary();

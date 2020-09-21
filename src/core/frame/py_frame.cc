@@ -246,11 +246,6 @@ oobj Frame::copy(const PKArgs& args) {
 }
 
 
-oobj Frame::m__copy__() {
-  args_copy.bind(nullptr, nullptr);
-  return copy(args_copy);
-}
-
 
 static PKArgs args___deepcopy__(
   0, 1, 0, false, false, {"memo"}, "__deepcopy__", nullptr);
@@ -259,6 +254,11 @@ oobj Frame::m__deepcopy__(const PKArgs&) {
   py::odict dict_arg;
   dict_arg.set(py::ostring("deep"), py::True());
   args_copy.bind(nullptr, dict_arg.to_borrowed_ref());
+  return copy(args_copy);
+}
+
+oobj Frame::m__copy__() {
+  args_copy.bind(nullptr, nullptr);
   return copy(args_copy);
 }
 
@@ -283,8 +283,7 @@ size_t Frame::m__len__() const {
 static const char* doc_export_names =
 R"(export_names(self)
 --
-
-.. xversionadded:: v0.10.0
+.. xversionadded:: 0.10
 
 Return a tuple of :ref:`f-expressions` for all columns of the frame.
 
@@ -468,7 +467,7 @@ frame `DT`. Such usage, however, is not recommended.
 
 See also
 --------
-- :data:`.nrows`: getter for the number of rows of the frame.
+- :attr:`nrows <Frame.nrows>`: getter for the number of rows of the frame.
 )";
 
 static GSArgs args_ncols("ncols", doc_ncols);
@@ -504,7 +503,7 @@ n: int
 
 See also
 --------
-- :data:`.ncols`: getter for the number of columns of the frame.
+- :attr:`ncols <Frame.ncols>`: getter for the number of columns of the frame.
 )";
 
 static GSArgs args_nrows("nrows", doc_nrows);
@@ -533,16 +532,20 @@ void Frame::set_nrows(const Arg& nr) {
 
 static const char* doc_shape =
 R"(
-Tuple with (nrows, ncols) dimensions of the Frame.
+Tuple with ``(nrows, ncols)`` dimensions of the frame.
+
+This property is read-only.
 
 Parameters
 ----------
 return: Tuple[int, int]
+    Tuple with two integers: the first is the number of rows, the
+    second is the number of columns.
 
 See also
 --------
-- :data:`.nrows`: getter for the number of rows of the frame;
-- :data:`.ncols`: getter for the number of columns of the frame.
+- :attr:`nrows <Frame.nrows>` -- getter for the number of rows;
+- :attr:`ncols <Frame.ncols>` -- getter for the number of columns.
 )";
 
 static GSArgs args_shape("shape", doc_shape);
@@ -568,6 +571,8 @@ oobj Frame::get_ndims() const {
 
 static const char* doc_source =
 R"(
+.. xversionadded:: 0.11
+
 The name of the file where this frame was loaded from.
 
 This is a read-only property that describes the origin of the frame.
@@ -621,8 +626,8 @@ return: Tuple[stype, ...]
 
 See also
 --------
-- :data:`.stype` -- common stype for all columns
-- :data:`.ltypes` -- tuple of columns' logical types
+- :attr:`stype <Frame.stype>` -- common stype for all columns
+- :attr:`ltypes <Frame.ltypes>` -- tuple of columns' logical types
 )";
 
 static GSArgs args_stypes("stypes", doc_stypes);
@@ -667,7 +672,7 @@ except: InvalidOperationError
 
 See also
 --------
-- :data:`.stypes` -- tuple of stypes for all columns.
+- :attr:`stypes <Frame.stypes>` -- tuple of stypes for all columns.
 )";
 
 static GSArgs args_stype("stype", doc_stype);
@@ -705,7 +710,7 @@ return: Tuple[ltype, ...]
 
 See also
 --------
-- :data:`.stypes` -- tuple of columns' storage types
+- :attr:`stypes <Frame.stypes>` -- tuple of columns' storage types
 )";
 
 static GSArgs args_ltypes("ltypes", doc_ltypes);
@@ -783,7 +788,7 @@ return: Frame
     returned.
 
 except: ValueError
-    This exception is raised if the lengths of `names` or `stypes`
+    The exception is raised if the lengths of `names` or `stypes`
     lists are different from the number of columns created, or when
     creating several columns and they have incompatible lengths.
 
@@ -990,18 +995,49 @@ static PKArgs args___init__(1, 0, 3, false, true,
                             {"_data", "names", "stypes", "stype"},
                             "__init__", doc___init__);
 
+
+static const char* doc_Frame =
+R"(
+Two-dimensional column-oriented container of data. This the primary
+data structure in the :mod:`datatable` module.
+
+A Frame is *two-dimensional* in the sense that it is comprised of
+rows and columns of data. Each data cell can be located via a pair
+of its coordinates: ``(irow, icol)``. We do not support frames with
+more or less than two dimensions.
+
+A Frame is *column-oriented* in the sense that internally the data is
+stored separately for each column. Each column has its own name and
+type. Types may be different for different columns but cannot vary
+within each column.
+
+Thus, the dimensions of a Frame are not symmetrical: a Frame is not
+a matrix. Internally the class is optimized for the use case when the
+number of rows significantly exceeds the number of columns.
+
+A Frame can be viewed as a ``list`` of columns: standard Python
+function ``len()`` will return the number of columns in the Frame,
+and ``frame[j]`` will return the column at index ``j`` (each "column"
+will be a Ffame with ``ncols == 1``). Similarly, you can iterate over
+the columns of a Frame in a loop, or use it in a ``*``-expansion::
+
+    for column in frame:
+        ...
+
+    list_of_columns = [*frame]
+
+A Frame can also be viewed as a ``dict`` of columns, where the key
+associated with each column is its name. Thus, ``frame[name]`` will
+return the column with the requested name. A Frame can also work with
+standard python ``**``-expansion::
+
+    dict_of_columns = {**frame}
+)";
+
+
 void Frame::impl_init_type(XTypeMaker& xt) {
   xt.set_class_name("datatable.Frame");
-  xt.set_class_doc(
-    "Two-dimensional column-oriented table of data. Each column has its own\n"
-    "name and type. Types may vary across columns but cannot vary within\n"
-    "each column.\n"
-    "\n"
-    "Internally the data is stored as C primitives, and processed using\n"
-    "multithreaded native C++ code.\n"
-    "\n"
-    "This is a primary data structure for the `datatable` module.\n"
-  );
+  xt.set_class_doc(doc_Frame);
   xt.set_subclassable(true);
   xt.add(CONSTRUCTOR(&Frame::m__init__, args___init__));
   xt.add(DESTRUCTOR(&Frame::m__dealloc__));

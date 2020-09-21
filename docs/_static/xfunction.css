@@ -3,6 +3,9 @@
     margin-bottom: 32pt;
 }
 
+.x-function + .x-function {
+    /*margin-top: -28pt;*/
+}
 
 
 /*------------------------------------------------------------------------------
@@ -17,6 +20,10 @@
     margin-bottom: 3pt;
     padding: 5pt 5pt 5pt 7pt;
     white-space: pre-wrap;
+}
+
+.x-function.xclass .sig-container {
+    background-color: #300c75;
 }
 
 .x-function .sig-container .sig-qualifier a,
@@ -91,8 +98,12 @@
     font-size: inherit;
     padding: 0;
 }
+.x-function .sig-parameters .param.self,
+.x-function .sig-parameters .param.self+.punct {
+    /*display: none;*/
+}
 
-.x-function .del-keyword {
+.x-function .keyword {
     color: white;
     font-weight: bold;
 }
@@ -150,6 +161,10 @@
     top: -6pt;
 }
 
+.x-function .xparam-body .x-version-added {
+    top: 0;
+}
+
 
 /*------------------------------------------------------------------------------
  * xparam
@@ -167,7 +182,9 @@
 .xparam-head {
     align-items: baseline;
     background: #f5f5f5;
+    color: rgba(0, 0, 0, 25%);  /* affects only the separators */
     display: flex;
+    font-family: "SF Mono", Menlo, monospace;
 }
 
 .xparam-head .param {
@@ -176,7 +193,6 @@
     color: #d7ffff;
     cursor: default;
     display: inline-block;
-    font-family: "SF Mono", Menlo, monospace;
     font-size: 85%;
     padding: 3px 6px;
 }
@@ -191,8 +207,12 @@
     color: #FFF;
 }
 
+.xparam-head .sep {
+    font-size: 85%;
+    padding-right: 2pt;
+}
+
 .xparam-head .types {
-    color: #ddd;  /* affects only the separators */
     line-height: 14px;
     padding: 3px 10px;
 }

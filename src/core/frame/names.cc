@@ -25,6 +25,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "cstring.h"
+#include "expr/declarations.h"
+#include "expr/fexpr_column.h"
 #include "frame/py_frame.h"
 #include "python/dict.h"
 #include "python/int.h"
@@ -136,7 +138,7 @@ lists.
 
 Parameters
 ----------
-column: str | int | Expr
+column: str | int | FExpr
     If string, then this is the name of the column whose index you
     want to find.
 
@@ -165,8 +167,8 @@ column: str | int | Expr
     actually exist in the Frame.
 
     If the `column` argument is an integer that is either greater
-    than or equal to :attr:`.ncols` or less than `-ncols`, then an
-    :exc:`IndexError` is raised.
+    than or equal to :attr:`ncols <Frame.ncols>` or less than
+    `-ncols`, then an :exc:`IndexError` is raised.
 
 
 Examples
@@ -203,6 +205,24 @@ oobj Frame::colindex(const PKArgs& args) {
       col = col.get_attr("_args").to_otuple()[0];
     }
     // fall-through
+  }
+  else if (col.is_fexpr()) {
+    auto fexpr = dt::expr::as_fexpr(col);
+    auto fexpr_col1 = dynamic_cast<dt::expr::FExpr_ColumnAsArg*>(fexpr.get());
+    if (fexpr_col1) {
+      auto arg = fexpr_col1->get_arg();
+      if (arg->get_expr_kind() == dt::expr::Kind::Int) {
+        auto i = arg->evaluate_int();
+        return py::oint(dt->xcolindex(i));
+      }
+      if (arg->get_expr_kind() == dt::expr::Kind::Str) {
+        col = arg->evaluate_pystr();
+      }
+    }
+    auto fexpr_col2 = dynamic_cast<dt::expr::FExpr_ColumnAsAttr*>(fexpr.get());
+    if (fexpr_col2) {
+      col = fexpr_col2->get_pyname();
+    }
   }
   if (col.is_string()) {
     size_t index = dt->xcolindex(col);
@@ -247,10 +267,10 @@ and the names will be automatically :ref:`mangled <name-mangling>`.
 
 Parameters
 ----------
-(return): Tuple[str, ...]
+return: Tuple[str, ...]
     When used in getter form, this property returns the names of all
     frame's columns, as a tuple. The length of the tuple is equal to
-    the number of columns in the frame, :data:`.ncols`.
+    the number of columns in the frame, :attr:`ncols <Frame.ncols>`.
 
 newnames: List[str?] | Tuple[str?, ...] | Dict[str, str?] | None
     The most common form is to assign the list or tuple of new
@@ -268,11 +288,11 @@ newnames: List[str?] | Tuple[str?, ...] | Dict[str, str?] | None
     ``del`` keyword: the names will be set to their default values,
     which are usually ``C0, C1, ...``.
 
-(except): ValueError
+except: ValueError
     If the length of the list/tuple `newnames` does not match the
     number of columns in the frame.
 
-(except): KeyError
+except: KeyError
     If `newnames` is a dictionary containing entries that do not
     match any of the existing columns in the frame.
 
@@ -331,6 +351,34 @@ void Frame::_init_names(XTypeMaker& xt) {
 // Options
 //------------------------------------------------------------------------------
 
+static const char * doc_options_frame_names_auto_index =
+R"(
+When Frame needs to auto-name columns, they will be assigned
+names `C0`, `C1`, `C2`, etc. by default. This option allows you to
+control the starting index in this sequence. For example, setting
+`dt.options.frame.names_auto_index=1` will cause the columns to be
+named `C1`, `C2`, `C3`, etc.
+
+See Also
+--------
+- :ref:`name-mangling` -- tutorial on name mangling.
+
+)";
+
+static const char * doc_options_frame_names_auto_prefix =
+R"(
+When Frame needs to auto-name columns, they will be assigned
+names `C0`, `C1`, `C2`, etc. by default. This option allows you to
+control the prefix used in this sequence. For example, setting
+`dt.options.frame.names_auto_prefix='Z'` will cause the columns to be
+named `Z0`, `Z1`, `Z2`, etc.
+
+See Also
+--------
+- :ref:`name-mangling` -- tutorial on name mangling.
+
+)";
+
 static int64_t     names_auto_index = 0;
 static std::string names_auto_prefix = "C";
 
@@ -339,21 +387,15 @@ void py::Frame::init_names_options() {
     "frame.names_auto_index",
     []{ return py::oint(names_auto_index); },
     [](const py::Arg& value){ names_auto_index = value.to_int64_strict(); },
-    "When Frame needs to auto-name columns, they will be assigned\n"
-    "names C0, C1, C2, ... by default. This option allows you to\n"
-    "control the starting index in this sequence. For example, setting\n"
-    "options.frame.names_auto_index=1 will cause the columns to be\n"
-    "named C1, C2, C3, ...");
+    doc_options_frame_names_auto_index
+  );
 
   dt::register_option(
     "frame.names_auto_prefix",
     []{ return py::ostring(names_auto_prefix); },
     [](const py::Arg& value){ names_auto_prefix = value.to_string(); },
-    "When Frame needs to auto-name columns, they will be assigned\n"
-    "names C0, C1, C2, ... by default. This option allows you to\n"
-    "control the prefix used in this sequence. For example, setting\n"
-    "options.frame.names_auto_prefix='Z' will cause the columns to be\n"
-    "named Z0, Z1, Z2, ...");
+    doc_options_frame_names_auto_prefix
+  );
 }
 
 

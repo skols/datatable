@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------
-// Copyright 2019 H2O.ai
+// Copyright 2019-2020 H2O.ai
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -29,17 +29,31 @@ namespace expr {
 
 
 static const char* doc_rowsd =
-R"(rowsd(x1, x2, ...)
+R"(rowsd(cols)
 --
 
-For each row, find the standard deviation of values in columns x1,
-x2, ... The columns must be all numeric (boolean, integer or float).
-The result will be a single float column with the same number of rows
-as the input columns.
+For each row, find the standard deviation among the columns from `cols`
+skipping missing values. If a row contains only the missing values,
+this function will produce a missing value too.
 
-If any column contains an NA value, it will be skipped during the
-calculation. Thus, NAs are treated as if they were zeros. If a row
-contains only NA values, this function will produce an NA too.
+Parameters
+----------
+cols: Expr
+    Input columns.
+
+return: Expr
+    f-expression consisting of one column that has the same number of rows
+    as in `cols`. The column stype is `float32` when all the `cols`
+    are `float32`, and `float64` in all the other cases.
+
+except: TypeError
+    The exception is raised when `cols` has non-numeric columns.
+
+See Also
+--------
+
+- :func:`rowmean()` -- calculate the mean value row-wise.
+
 )";
 
 py::PKArgs args_rowsd(0, 0, 0, true, false, {}, "rowsd", doc_rowsd);
@@ -57,12 +71,12 @@ static bool op_rowsd(size_t i, T* out, const colvec& columns) {
     if (!xvalid) continue;
     count++;
     T tmp1 = value - mean;
-    mean += tmp1 / count;
+    mean += tmp1 / static_cast<T>(count);
     T tmp2 = value - mean;
     m2 += tmp1 * tmp2;
   }
   if (count > 1 && !std::isnan(m2)) {
-    *out = (m2 >= 0)? std::sqrt(m2 / (count - 1)) : 0;
+    *out = (m2 >= 0)? std::sqrt(m2 / static_cast<T>(count - 1)) : 0;
     return true;
   } else {
     return false;

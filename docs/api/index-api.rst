@@ -4,77 +4,231 @@
 datatable API
 =============
 
-=========================  =====================================================
-**Classes**
---------------------------------------------------------------------------------
-:class:`Frame`             Main "table of data" class
-:class:`ltype`
-:class:`stype`
+Symbols listed here are available for import from the ``datatable`` module.
 
-**Functions**
---------------------------------------------------------------------------------
-:func:`fread()`            Read CSV/text/XLSX/Jay/other files
-:func:`iread()`            Same as `fread()`, but read multiple files at once
 
-:func:`by()`
-:func:`join()`
-:func:`sort()`
-:func:`update()`
+Submodules
+----------
 
-:func:`cbind()`            Combine frames by columns
-:func:`rbind()`            Combine frames by rows
-:func:`repeat()`
+.. list-table::
+    :widths: auto
+    :class: api-table
 
-:func:`ifelse()`           Ternary if operator
-:func:`isna()`
-:func:`shift()`
-:func:`cut()`              Bin frame/f-expression into equal-width intervals
+    * - :mod:`math. <datatable.math>`
+      - Mathematical functions, similar to python's :mod:`math` module.
 
-:func:`init_styles()`
+    * - :mod:`models. <datatable.models>`
+      - A small set of data analysis tools.
 
-:func:`rowall()`
-:func:`rowany()`
-:func:`rowcount()`
-:func:`rowfirst()`
-:func:`rowlast()`
-:func:`rowmax()`
-:func:`rowmean()`
-:func:`rowmin()`
-:func:`rowsd()`
-:func:`rowsum()`
+    * - :mod:`internal. <datatable.internal>`
+      - Access to some internal details of :mod:`datatable` module.
 
-:func:`intersect()`
-:func:`setdiff()`
-:func:`symdiff()`
-:func:`union()`
-:func:`unique()`
 
-:func:`corr()`             Coefficient of correlation between two columns
-:func:`count()`            Count non-missing values in a column
-:func:`cov()`              The covariance between two columns
-:func:`max()`              The largest element in a column
-:func:`mean()`             Arithmetic mean of all values in a column
-:func:`median()`           The median element in a column
-:func:`min()`              The smallest element in a column
-:func:`sd()`               The standard deviation of values in a column
-:func:`sum()`              Sum of values in a column
-=========================  =====================================================
+Classes
+-------
 
+.. list-table::
+    :widths: auto
+    :class: api-table
+
+    * - :class:`Frame`
+      - Main "table of data" class. This is the equivalent of pandas' or Julia's
+        ``DataFrame``, R's ``data.table`` or ``tibble``, SQL's ``TABLE``, etc.
+
+    * - :class:`FExpr`
+      - Helper class for computing formulas over a frame.
+
+    * - :class:`Namespace`
+      - Helper class for addressing columns in a frame.
+
+    * - :class:`stype`
+      - Enum of column "storage" types, analogous to numpy's ``dtype``.
+
+    * - :class:`ltype`
+      - Enum of column "logical" types, similar to standard Python notion
+        of a ``type``.
+
+
+Functions
+---------
+
+.. list-table::
+    :widths: auto
+    :class: api-table
+
+    * - :func:`fread()`
+      - Read CSV/text/XLSX/Jay/other files
+
+    * - :func:`iread()`
+      - Same as :func:`fread()`, but read multiple files at once
+
+    * -
+      -
+    * - :func:`by()`
+      - Group-by clause for use in Frame’s square-bracket selector
+    * - :func:`join()`
+      - Join clause for use in Frame’s square-bracket selector
+    * - :func:`sort()`
+      - Sort clause for use in Frame’s square-bracket selector
+    * - :func:`update()`
+      - Create new or update existing columns within a frame
+    * -
+      -
+    * - :func:`cbind()`
+      - Combine frames by columns
+
+    * - :func:`rbind()`
+      - Combine frames by rows
+
+    * - :func:`repeat()`
+      - Concatenate frame by rows
+    * -
+      -
+    * - :func:`ifelse()`
+      - Ternary if operator
+    * - :func:`shift()`
+      - Shift column by a given number of rows
+    * - :func:`cut()`
+      - Bin a column into equal-width intervals
+    * - :func:`qcut()`
+      - Bin a column into equal-population intervals
+    * - :func:`split_into_nhot()`
+      - Split and nhot-encode a single-column frame
+
+    * -
+      -
+    * - :func:`init_styles()`
+      - Inject datatable's stylesheets into the Jupyter notebook
+    * - :func:`rowall()`
+      - Row-wise `all() <https://docs.python.org/3/library/functions.html#all>`_ function
+    * - :func:`rowany()`
+      - Row-wise `any() <https://docs.python.org/3/library/functions.html#any>`_ function
+    * - :func:`rowcount()`
+      - Calculate the number of non-missing values per row
+    * - :func:`rowfirst()`
+      - Find the first non-missing value row-wise
+    * - :func:`rowlast()`
+      - Find the last non-missing value row-wise
+    * - :func:`rowmax()`
+      - Find the largest element row-wise
+    * - :func:`rowmean()`
+      - Calculate the mean value row-wise
+    * - :func:`rowmin()`
+      - Find the smallest element row-wise
+    * - :func:`rowsd()`
+      - Calculate the standard deviation row-wise
+    * - :func:`rowsum()`
+      - Calculate the sum of all values row-wise
+    * -
+      -
+    * - :func:`intersect()`
+      - Calculate the set intersection of values in the frames
+    * - :func:`setdiff()`
+      - Calculate the set difference between the frames
+    * - :func:`symdiff()`
+      - Calculate the symmetric difference between the sets of values in the frames
+    * - :func:`union()`
+      - Calculate the union of values in the frames
+    * - :func:`unique()`
+      - Find unique values in a frame
+    * -
+      -
+    * - :func:`corr()`
+      - Calculate correlation between two columns
+    * - :func:`count()`
+      - Count non-missing values per a column
+    * - :func:`cov()`
+      - Calculate covariance between two columns
+    * - :func:`max()`
+      - Find the largest element per a column
+    * - :func:`mean()`
+      - Calculate mean value per a column
+    * - :func:`median()`
+      - Find the median element per a column
+    * - :func:`min()`
+      - Find the smallest element per a column
+    * - :func:`sd()`
+      - Calculate the standard deviation per a column
+    * - :func:`sum()`
+      - Calculate the sum of all values per a column
+
+
+Other
+-----
+
+.. list-table::
+    :widths: auto
+    :class: api-table
+
+    * - :data:`build_info`
+      - Information about the build of the datatable module.
+
+    * - :data:`dt`
+      - The datatable module.
+
+    * - :data:`f`
+      - The primary namespace used during :meth:`DT[...] <Frame.__getitem__>` call.
+
+    * - :data:`g`
+      - Secondary namespace used during :meth:`DT[..., join()] <Frame.__getitem__>` call.
+
+    * - :data:`options`
+      - datatable options.
 
 .. toctree::
     :hidden:
 
-    Frame           <frame>
-    FTRL            <ftrl>
-    math.           <math>
-    by()            <dt/by>
-    cbind()         <dt/cbind>
-    cut()           <dt/cut>
-    fread()         <dt/fread>
-    ifelse()        <dt/ifelse>
-    iread()         <dt/iread>
-    rbind()         <dt/rbind>
-    repeat()        <dt/repeat>
-    shift()         <dt/shift>
-    sort()          <dt/sort>
-    update()        <dt/update>
+    internal.         <internal>
+    math.             <math>
+    models.           <models>
+    options.          <options>
+    FExpr             <fexpr>
+    Frame             <frame>
+    ltype             <ltype>
+    Namespace         <namespace>
+    stype             <stype>
+    build_info        <dt/build_info>
+    by()              <dt/by>
+    cbind()           <dt/cbind>
+    corr()            <dt/corr>
+    count()           <dt/count>
+    cov()             <dt/cov>
+    cut()             <dt/cut>
+    dt                <dt/dt>
+    f                 <dt/f>
+    first()           <dt/first>
+    fread()           <dt/fread>
+    g                 <dt/g>
+    init_styles()     <dt/init_styles>
+    ifelse()          <dt/ifelse>
+    intersect()       <dt/intersect>
+    iread()           <dt/iread>
+    join()            <dt/join>
+    last()            <dt/last>
+    max()             <dt/max>
+    mean()            <dt/mean>
+    median()          <dt/median>
+    min()             <dt/min>
+    qcut()            <dt/qcut>
+    rowall()          <dt/rowall>
+    rowany()          <dt/rowany>
+    rowcount()        <dt/rowcount>
+    rowfirst()        <dt/rowfirst>
+    rowlast()         <dt/rowlast>
+    rowmax()          <dt/rowmax>
+    rowmean()         <dt/rowmean>
+    rowmin()          <dt/rowmin>
+    rowsd()           <dt/rowsd>
+    rowsum()          <dt/rowsum>
+    rbind()           <dt/rbind>
+    repeat()          <dt/repeat>
+    sd()              <dt/sd>
+    setdiff()         <dt/setdiff>
+    shift()           <dt/shift>
+    sort()            <dt/sort>
+    split_into_nhot() <dt/split_into_nhot>
+    symdiff()         <dt/symdiff>
+    sum()             <dt/sum>
+    union()           <dt/union>
+    unique()          <dt/unique>
+    update()          <dt/update>

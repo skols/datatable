@@ -30,8 +30,10 @@
 #include "call_logger.h"
 #include "csv/reader.h"
 #include "datatablemodule.h"
+#include "expr/fexpr.h"
 #include "expr/head_func.h"
 #include "expr/head_reduce.h"
+#include "expr/namespace.h"
 #include "expr/py_by.h"              // py::oby
 #include "expr/py_join.h"            // py::ojoin
 #include "expr/py_sort.h"            // py::osort
@@ -39,7 +41,7 @@
 #include "frame/py_frame.h"
 #include "frame/repr/html_widget.h"
 #include "ltype.h"
-#include "models/aggregator.h"
+#include "models/aggregate.h"
 #include "models/py_ftrl.h"
 #include "options.h"
 #include "parallel/api.h"
@@ -48,6 +50,7 @@
 #include "py_encodings.h"
 #include "python/_all.h"
 #include "python/string.h"
+#include "python/xargs.h"
 #include "read/py_read_iterator.h"
 #include "sort.h"
 #include "utils/assert.h"
@@ -108,18 +111,32 @@ _unpack_frame_column_args(const py::PKArgs& args)
 }
 
 
-static py::PKArgs args_frame_columns_virtual(
-    1, 0, 0, false, false, {"frame"},
-    "frame_columns_virtual",
+static const char* doc_frame_columns_virtual =
 R"(frame_columns_virtual(frame)
 --
 
-Return the tuple of which columns in the Frame are virtual.
-)");
+Return the list indicating which columns in the `frame` are virtual.
+
+Parameters
+----------
+return: List[bool]
+    Each element in the list indicates whether the corresponding column
+    is virtual or not.
+
+Notes
+-----
+.. deprecated:: 0.11.0
+
+This function will be expanded and moved into the main :class:`Frame` class.
+)";
+
+static py::PKArgs args_frame_columns_virtual(
+    1, 0, 0, false, false, {"frame"},
+    "frame_columns_virtual", doc_frame_columns_virtual);
 
 static py::oobj frame_columns_virtual(const py::PKArgs& args) {
   DataTable* dt = args[0].to_datatable();
-  py::otuple virtuals(dt->ncols());
+  py::olist virtuals(dt->ncols());
   for (size_t i = 0; i < dt->ncols(); ++i) {
     virtuals.set(i, py::obool(dt->get_column(i).is_virtual()));
   }
@@ -127,15 +144,28 @@ static py::oobj frame_columns_virtual(const py::PKArgs& args) {
 }
 
 
-static py::PKArgs args_frame_column_data_r(
-    2, 0, 0, false, false, {"frame", "i"},
-    "frame_column_data_r",
+static const char* doc_frame_column_data_r =
 R"(frame_column_data_r(frame, i)
 --
 
-Return C pointer to the main data array of the column `frame[i]`. The pointer
-is returned as a `ctypes.c_void_p` object.
-)");
+Return C pointer to the main data array of the column `frame[i]`.
+The column will be materialized if it was virtual.
+
+Parameters
+----------
+frame: Frame
+    The :class:`Frame` where to look up the column.
+
+i: int
+    The index of a column, in the range ``[0; ncols)``.
+
+return: ctypes.c_void_p
+    The pointer to the column's internal data.
+)";
+
+static py::PKArgs args_frame_column_data_r(
+    2, 0, 0, false, false, {"frame", "i"},
+    "frame_column_data_r", doc_frame_column_data_r);
 
 static py::oobj frame_column_data_r(const py::PKArgs& args) {
   static py::oobj c_void_p = py::oobj::import("ctypes", "c_void_p");
@@ -150,15 +180,28 @@ static py::oobj frame_column_data_r(const py::PKArgs& args) {
 }
 
 
-static py::PKArgs args_frame_integrity_check(
-  1, 0, 0, false, false, {"frame"}, "frame_integrity_check",
+static const char* doc_frame_integrity_check =
 R"(frame_integrity_check(frame)
 --
 
 This function performs a range of tests on the `frame` to verify
 that its internal state is consistent. It returns None on success,
-or throws an AssertionError if any problems were found.
-)");
+or throws an :exc:`AssertionError` if any problems were found.
+
+Parameters
+----------
+frame: Frame
+    A :class:`Frame` object that needs to be checked for internal consistency.
+
+return: None
+
+except: AssertionError
+    An exception is raised if there were any issues with the `frame`.
+)";
+
+static py::PKArgs args_frame_integrity_check(
+  1, 0, 0, false, false, {"frame"}, "frame_integrity_check",
+  doc_frame_integrity_check);
 
 static void frame_integrity_check(const py::PKArgs& args) {
   if (!args[0].is_frame()) {
@@ -170,10 +213,16 @@ static void frame_integrity_check(const py::PKArgs& args) {
 }
 
 
+static const char* doc_in_debug_mode =
+R"(
+Return `True` if :mod:`datatable` was compiled in debug mode.
+
+.. deprecated:: 0.11.0
+)";
 
 static py::PKArgs args_in_debug_mode(
     0, 0, 0, false, false, {}, "in_debug_mode",
-    "Return True if datatable was compiled in debug mode");
+    doc_in_debug_mode);
 
 static py::oobj in_debug_mode(const py::PKArgs&) {
   #if DT_DEBUG
@@ -184,10 +233,27 @@ static py::oobj in_debug_mode(const py::PKArgs&) {
 }
 
 
+static const char* doc_get_thread_ids =
+R"(
+Return system ids of all threads used internally by datatable.
+
+Calling this function will cause the threads to spawn if they
+haven't done already. (This behavior may change in the future).
+
+Parameters
+----------
+return: List[str]
+    The list of thread ids used by the datatable. The first element
+    in the list is the id of the main thread.
+
+See Also
+--------
+- :attr:`dt.options.nthreads <datatable.options.nthreads>` -- global option
+  that controls the number of threads in use.
+)";
 
 static py::PKArgs args_get_thread_ids(
-    0, 0, 0, false, false, {}, "get_thread_ids",
-R"(Return system ids of all threads used internally by datatable)");
+    0, 0, 0, false, false, {}, "get_thread_ids", doc_get_thread_ids);
 
 static py::oobj get_thread_ids(const py::PKArgs&) {
   std::mutex m;
@@ -231,10 +297,16 @@ static void _register_function(const py::PKArgs& args) {
 }
 
 
+static const char* doc_compiler_version =
+R"(
+Return the version of the C++ compiler used to compile this module.
+
+.. deprecated:: 0.11.0
+)";
 
 static py::PKArgs args_compiler_version(
   0, 0, 0, false, false, {}, "compiler_version",
-  "Return the version of the C++ compiler used to compile this module");
+  doc_compiler_version);
 
 const char* get_compiler_version_string() {
   #define STR(x) STR1(x)
@@ -263,9 +335,16 @@ static py::oobj compiler_version(const py::PKArgs&) {
 
 
 
+static const char* doc_regex_supported =
+R"(
+Was the datatable built with regular expression support?
+
+.. deprecated:: 0.11.0
+)";
+
 static py::PKArgs args_regex_supported(
   0, 0, 0, false, false, {}, "regex_supported",
-  "Was the datatable built with regular expression support?");
+  doc_regex_supported);
 
 static py::oobj regex_supported(const py::PKArgs&) {
   return py::obool(REGEX_SUPPORTED);
@@ -360,12 +439,14 @@ void py::DatatableModule::init_methods() {
   ADD_FN(&regex_supported, args_regex_supported);
   ADD_FN(&apply_color, args_apply_color);
 
+  for (py::XArgs* xarg : py::XArgs::store()) {
+    add(xarg->get_method_def());
+  }
+
   init_methods_aggregate();
   init_methods_buffers();
   init_methods_cbind();
   init_methods_csv();
-  init_methods_cut();
-  init_methods_ifelse();
   init_methods_isclose();
   init_methods_jay();
   init_methods_join();
@@ -407,6 +488,8 @@ extern "C" {
       py::Frame::init_type(m);
       py::Ftrl::init_type(m);
       py::ReadIterator::init_type(m);
+      py::Namespace::init_type(m);
+      dt::expr::PyFExpr::init_type(m);
 
       dt::init_config_option(m);
       py::oby::init(m);

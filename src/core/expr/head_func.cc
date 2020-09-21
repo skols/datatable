@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------
-// Copyright 2019 H2O.ai
+// Copyright 2019-2020 H2O.ai
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -50,7 +50,7 @@ Kind Head_Func::get_expr_kind() const {
 
 // Forbid expressions like `f[f.A]`.
 //
-Workframe Head_Func::evaluate_f(EvalContext&, size_t, bool) const {
+Workframe Head_Func::evaluate_f(EvalContext&, size_t) const {
   throw TypeError() << "An expression cannot be used as a column selector";
 }
 
@@ -59,9 +59,9 @@ Workframe Head_Func::evaluate_f(EvalContext&, size_t, bool) const {
 // evaluating this expression in "normal" mode.
 //
 Workframe Head_Func::evaluate_j(
-    const vecExpr& args, EvalContext& ctx, bool allow_new) const
+    const vecExpr& args, EvalContext& ctx) const
 {
-  return evaluate_n(args, ctx, allow_new);
+  return evaluate_n(args, ctx);
 }
 
 
@@ -71,13 +71,13 @@ Workframe Head_Func::evaluate_j(
 Workframe Head_Func::evaluate_r(
     const vecExpr& args, EvalContext& ctx, const sztvec&) const
 {
-  return evaluate_n(args, ctx, false);
+  return evaluate_n(args, ctx);
 }
 
 
 
 RowIndex Head_Func::evaluate_i(const vecExpr& args, EvalContext& ctx) const {
-  Workframe wf = evaluate_n(args, ctx, false);
+  Workframe wf = evaluate_n(args, ctx);
   if (wf.ncols() != 1) {
     throw TypeError() << "i-expression evaluated into " << wf.ncols()
         << " columns";
@@ -100,13 +100,6 @@ RiGb Head_Func::evaluate_iby(const vecExpr&, EvalContext&) const {
 //------------------------------------------------------------------------------
 // Construction factory
 //------------------------------------------------------------------------------
-
-static ptrHead make_col(Op, const py::otuple& params) {
-  xassert(params.size() == 1);
-  size_t frame_id = params[0].to_size_t();
-  return ptrHead(new Head_Func_Column(frame_id));
-}
-
 
 static ptrHead make_cast(Op, const py::otuple& params) {
   xassert(params.size() == 1);
@@ -172,13 +165,10 @@ void Head_Func::init() {
   for (size_t i = REDUCER_FIRST; i <= REDUCER_LAST; ++i) factory[i] = make_reduce1;
   for (size_t i = MATH_FIRST;    i <= MATH_LAST;    ++i) factory[i] = make_unop;
   for (size_t i = ROWFNS_FIRST;  i <= ROWFNS_LAST;  ++i) factory[i] = make_rowfn;
-  factory[static_cast<size_t>(Op::COL)]        = make_col;
   factory[static_cast<size_t>(Op::CAST)]       = make_cast;
   factory[static_cast<size_t>(Op::SETPLUS)]    = make_colsetop;
   factory[static_cast<size_t>(Op::SETMINUS)]   = make_colsetop;
   factory[static_cast<size_t>(Op::SHIFTFN)]    = &Head_Func_Shift::make;
-  factory[static_cast<size_t>(Op::IFELSE)]     = &Head_Func_IfElse::make;
-  factory[static_cast<size_t>(Op::CUT)]        = &Head_Func_Cut::make;
   factory[static_cast<size_t>(Op::COUNT0)]     = make_reduce0;
   factory[static_cast<size_t>(Op::COV)]        = make_reduce2;
   factory[static_cast<size_t>(Op::CORR)]       = make_reduce2;

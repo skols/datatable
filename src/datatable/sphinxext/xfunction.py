@@ -43,9 +43,14 @@ This makes several directives available for use in the .rst files:
         :doc: c/frame/cbind.cc doc_cbind
         :tests: tests/frame/test-cbind.py
 
+    .. xclass: datatable.Frame
+
+The :src: option is required, but it may be "--" to indicate that the object
+has no identifiable source (use sparingly!).
 """
-import os
+import pathlib
 import re
+import time
 from docutils import nodes
 from docutils.parsers.rst import directives
 from docutils.statemachine import StringList
@@ -55,16 +60,17 @@ from sphinx.util.docutils import SphinxDirective
 from sphinx.util.nodes import make_refnode
 from . import xnodes
 
-logger = logging.getLogger(__name__)
-
 rx_cc_id = re.compile(r"(?:\w+::)*\w+")
 rx_py_id = re.compile(r"(?:\w+\.)*\w+")
-rx_param = re.compile(r"(?:"
-                      r"(\w+)(?:\s*=\s*("
-                      r"\"[^\"]*\"|'[^']*'|\([^\(\)]*\)|\[[^\[\]]*\]|[^,\[\(\"]*"
-                      r"))?"
-                      r"|([\*/]|\*\*?\w+)"
-                      r")\s*(?:,\s*|$)")
+rx_param = re.compile(r"""
+    (?:(\w+)                                        # parameter name
+       (?:\s*=\s*(\"[^\"]*\"|'[^']*'|\([^\(\)]*\)|
+                  \[[^\[\]]*\]|[^,\[\(\"]*))?       # default value
+       |(\*\*?\w*|/)                                # varags/varkwds
+    )\s*(?:,\s*)?                                   # followed by a comma
+    |                                               # - or -
+    \[,?\s*(\w+),?\s*\]\s*                          # a parameter in square brackets
+    """, re.VERBOSE)
 rx_header = re.compile(r"(\-{3,})\s*")
 rx_return = re.compile(r"[\[\(]?returns?[\]\)]?")
 
@@ -74,6 +80,8 @@ rx_return = re.compile(r"[\[\(]?returns?[\]\)]?")
 #
 
 # Store title overrides for individual pages.
+# This controls the HTML titles only, i.e. the <title/> element
+# inside the <head/> section.
 title_overrides = {}
 
 
@@ -84,43 +92,130 @@ title_overrides = {}
 
 class XobjectDirective(SphinxDirective):
     """
-    Fields used by this class:
+    The following data is stored by this directive in the environment:
 
-    ==[ Derived from config/arguments/options ]==
-        self.module_name -- config variable xf_module_name
-        self.project_root -- config variable xf_project_root
-        self.permalink_fn -- config variable xf_permalink_fn
-        self.obj_name -- python name of the object being documented
-        self.qualifier -- object's qualifier, this string + obj_name give a
-                          fully-qualified object name.
-        self.src_file -- name of the file where the code is located
-        self.src_fnname -- name of the C++ function (possibly with a namespace)
-                           which corresponds to the object being documented
-        self.src_fnname2 -- name of the second C++ function (for setters)
-        self.doc_file -- name of the file where the docstring is located
-        self.doc_var -- name of the C++ variable containing the docstring
-        self.test_file -- name of the file where tests are located
-        self.setter -- name of the setter variable (for :xdata: directives)
+        env.xobject = {
+            <docname>: {
+                "timestamp": float,    # time of last build of the page
+                "sources": List[str],  # names of source files
+            }
+        }
 
-    ==[ Parsed from the source files(s) ]==
-        self.src_line_first -- starting line of the function in self.src_file
-        self.src_line_last -- final line of the function in self.src_file
-        self.src_github_url -- URL of the function's code on GitHub
-        self.doc_text -- text of the object's docstring
-        self.doc_line_start -- starting line of the docstring in self.doc_file
-        self.doc_github_url -- URL of the docstring on GitHub
-        self.tests_github_url -- URL of the test file on GitHub
+    Fields inherited from base class
+    --------------------------------
+    self.arguments : List[str]
+        List of (whitespace-separated) tokens that come after the
+        directive name, for example if the source has ".. xmethod:: A B",
+        then this variable will contain ['A', 'B']
 
-    ==[ Parsed from the docstring ]==
-        self.parsed_params -- list of parameters of this function; each entry
-                              is either the parameter itself (str), or a tuple
-                              of strings (parameter, default_value).
+    self.block_text : str
+        Full text of the directive and its contents, as a single string.
 
-    See also:
-        sphinx/directives/__init__.py::ObjectDescription
-        sphinx/domains/python.py::PyObject
+    self.config : sphinx.config.Config
+        Global configuration options.
+
+    self.content : StringList
+        The content of the directive, i.e. after the directive itself and
+        all its options. This is a list of lines.
+
+    self.content_offset : int
+        Index of the first line of `self.content` within the source file.
+
+    self.env : sphinx.environment.BuildEnvironment
+        Stuff.
+
+    self.name : str
+        The name of the directive, such as "xfunction" or "xdata".
+
+    self.options : Dict[str, str]
+        Key-value store of all options passed to the directive.
+
+
+    Fields derived from config/arguments/options
+    --------------------------------------------
+    self.module_name : str
+        The name of the module being documented, in our case it's
+        "datatable" (from config variable `xf_module_name`).
+
+    self.project_root : pathlib.Path
+        Location of the project's root folder, relative to the folder
+        where the documentation is built. The paths specified by the
+        `:src:` and `:doc:` options must be relative to this root
+        directory (from config variable `xf_project_root`).
+
+    self.permalink_url0 : str
+        Pattern to be used for constructing URLs to a file. This string
+        should contain a "{filename}" pattern inside. (from config variable
+        `xf_permalink_url0`).
+
+    self.permalink_url2 : str
+        Pattern to be used for constructing URLs to a file. It is similar
+        to `self.permalink_url0`, but also allows selecting a particular
+        range of lines within the file. Should contain patterns "{line1}"
+        and "{line2}" inside (from config variable `xf_permalink_url2`).
+
+    self.obj_name : str
+        Python name (short) of the object being documented.
+
+    self.qualifier : str
+        The object's qualifier, such that `qualifier + obj_name` would
+        produce a fully-qualified object name.
+
+    self.src_file : str
+        Name of the file where the code is located.
+
+    self.src_fnname : str
+        Name of the C++ function (possibly with a namespace) which
+        corresponds to the object being documented.
+
+    self.src_fnname2 : str | None
+        Name of the second C++ function (for setters).
+
+    self.doc_file : str | None
+        Name of the file where the docstring is located.
+
+    self.doc_var : str | None
+        Name of the C++ variable containing the docstring.
+
+    self.test_file : str | None
+        Name of the file where tests are located.
+
+    self.setter : str | None
+        Name of the setter variable (for :xdata: directives).
+
+
+    Parsed from the source files(s)
+    -------------------------------
+    self.src_github_url : str
+        GitHub URL for the function's code.
+
+    self.src2_github_url : str
+        GitHub URL for the function's code.
+
+    self.doc_lines : StringList
+        List of lines comprising the object's docstring.
+
+    self.doc_github_url : str | None
+        URL of the docstring on GitHub
+
+    self.tests_github_url : str
+        URL of the test file on GitHub
+
+
+    Fields parsed from the docstring
+    --------------------------------
+    self.parsed_params : List[str | Tuple[str, str]]
+        List of parameters of this function; each entry is either the
+        parameter itself (str), or a tuple `(parameter, default_value)`.
+
+
+    See also
+    --------
+    - sphinx/directives/__init__.py::ObjectDescription
+    - sphinx/domains/python.py::PyObject
+
     """
-    has_content = False
+    has_content = True
     required_arguments = 1
     optional_arguments = 0
     final_argument_whitespace = False
@@ -130,27 +225,87 @@ class XobjectDirective(SphinxDirective):
         "tests": directives.unchanged,
         "settable": directives.unchanged,
         "deletable": directives.unchanged,
+        "noindex": directives.unchanged,
     }
 
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.src_file = None
+        self.src_fnname = None
+        self.src_fnname2 = None
+        self.src_github_url = None
+        self.doc_file = None
+        self.doc_var = None
+        self.doc_github_url = None
+        self.doc_lines = StringList()
+        self.test_file = None
+        self.tests_github_url = None
+
+
     def run(self):
+        """
+        Main function invoked by the Sphinx runtime.
+        """
         self._parse_config()
+        self._init_env()
         self._parse_arguments()
         self._parse_option_src()
         self._parse_option_doc()
         self._parse_option_tests()
         self._parse_option_settable()
         self._parse_option_deletable()
-        title_overrides[self.env.docname] = ".%s()" % self.obj_name
+        self._register_title_override()
 
-        if self.doc_file == self.src_file:
-            self._locate_sources(self.src_file, self.src_fnname,
-                                 self.src_fnname2, self.doc_var)
-        else:
-            self._locate_sources(self.src_file, self.src_fnname,
-                                 self.src_fnname2, None)
-            self._locate_sources(self.doc_file, None, None, self.doc_var)
+        if self.src_fnname:
+            self.src_github_url = self._locate_fn_source(
+                                    self.src_file, self.src_fnname)
+        if self.src_fnname2:
+            self.src2_github_url = self._locate_fn_source(
+                                    self.src_file, self.src_fnname2)
+        self._extract_docs_from_source()
+        if self.content:
+            self.doc_lines.extend(self.content)
         self._parse_docstring()
+
         return self._generate_nodes()
+
+
+    def _init_env(self):
+        if not hasattr(self.env, "xobject"):
+            self.env.xobject = {}
+        self.env.xobject[self.env.docname] = dict(
+            timestamp = time.time(),
+            sources = []
+        )
+        # equivalent of `.. py::currentmodule::` directive
+        self.env.ref_context['py:module'] = self.module_name
+
+
+    def _register_source_file(self, filename):
+        self.env.xobject[self.env.docname]['sources'].append(filename)
+
+
+    def _register_title_override(self):
+        """
+        Normally HTML page's <title/> will be the same as the title
+        displayed on the page in an <h1/> element.
+
+        However, due to the fact that the amount of screen space
+        available for a title is very small, we want to make the
+        title "reversed": first the object name and then the
+        qualifier. This way the most important information will
+        remain visible longer.
+        """
+        if self.name in ["xclass", "xdata", "xfunction"]:
+            title = self.obj_name
+        elif self.name == "xattr":
+            title = "." + self.obj_name
+        elif self.name == "xmethod":
+            title = "." + self.obj_name + "()"
+        else:
+            self.error("Unknown directive " + self.name)
+        title += " &ndash; " + self.qualifier
+        title_overrides[self.env.docname] = title
 
 
     #---------------------------------------------------------------------------
@@ -166,6 +321,12 @@ class XobjectDirective(SphinxDirective):
         assert isinstance(self.project_root, str)
         assert isinstance(self.permalink_url0, str)
         assert isinstance(self.permalink_url2, str)
+        assert "{filename}" in self.permalink_url0
+        assert "{filename}" in self.permalink_url2
+        assert "{line1}" in self.permalink_url2
+        assert "{line2}" in self.permalink_url2
+        self.project_root = pathlib.Path(self.project_root)
+        assert self.project_root.is_dir()
 
 
     def _parse_arguments(self):
@@ -176,7 +337,7 @@ class XobjectDirective(SphinxDirective):
         assert len(self.arguments) == 1  # checked from required_arguments field
         fullname = self.arguments[0].strip()
         if not re.fullmatch(rx_py_id, fullname):
-            raise self.error("Invalid argument to %s directive: must be a "
+            raise self.error("Invalid argument to ..%s directive: must be a "
                              "valid python indentifier, instead got `%s`"
                              % (self.name, fullname))
         parts = fullname.rsplit('.', maxsplit=1)
@@ -196,56 +357,73 @@ class XobjectDirective(SphinxDirective):
         Process the required option `:src:`, and extract fields
         `self.src_file` and `self.src_fnname`.
         """
+        if "src" not in self.options:
+            raise self.error("Option :src: is required for ..%s directive"
+                             % self.name)
         src = self.options["src"].strip()
+        if src == '--':
+            return
+
         parts = src.split()
-        if len(parts) == 2 or (len(parts) == 3 and self.name == "xdata"):
-            src = parts[0]
-            if not os.path.isfile(os.path.join(self.project_root, src)):
-                raise self.error("Invalid :src: option: file `%s` does not "
-                                 "exist" % src)
-            self.src_file = src
-            for p in parts[1:]:
-                if not re.fullmatch(rx_cc_id, p):
-                    raise self.error("Invalid :src: option: `%s` is not a "
-                                     "valid C++ identifier" % p)
-            self.src_fnname = parts[1]
-            if len(parts) == 3:
-                self.src_fnname2 = parts[2]
-            else:
-                self.src_fnname2 = None
+        if self.name in ["xdata", "xattr"]:
+            if len(parts) not in [2, 3]:
+                raise self.error("Invalid :src: option for ..%s directive: "
+                                 "it must have form ':src: filename "
+                                 "getter_name [setter_name]'" % self.name)
         else:
-            raise self.error("Invalid :src: option: it must have form "
-                             "'filename fnname [fnname]'")
+            if len(parts) != 2:
+                raise self.error("Invalid :src: option for ..%s directive: "
+                                 "it must have form ':src: filename %s_name'"
+                                 % (self.name, self.name[1:]))
+
+        src = parts[0]
+        if not (self.project_root / src).is_file():
+            raise self.error("Invalid :src: option in ..%s directive: file "
+                             "`%s` does not exist" % (self.name, src))
+        self.src_file = src
+        self._register_source_file(self.src_file)
+        for p in parts[1:]:
+            if not re.fullmatch(rx_cc_id, p):
+                raise self.error("Invalid :src: option in ..%s directive: "
+                                 "`%s` is not a valid C++ identifier"
+                                 % (self.name, p))
+        self.src_fnname = parts[1]
+        if len(parts) == 3:
+            self.src_fnname2 = parts[2]
 
 
     def _parse_option_doc(self):
         """
         Process the nonmandatory option `:doc:`, and extract fields
         `self.doc_file` and `self.doc_var`. If the option is not
-        provided, the fields are set to their default values.
+        provided, the fields are set to `None`.
         """
-        doc = self.options.get("doc", "").strip()
+        if "doc" not in self.options:
+            return
+        doc = self.options["doc"].strip()
         parts = doc.split()
+        if len(parts) > 2:
+            raise self.error("Invalid :doc: option in ..%s directive: it must "
+                             "have form ':doc: filename [docname]'"
+                             % self.name)
 
         if len(parts) == 0:
             self.doc_file = self.src_file
-        elif os.path.isfile(os.path.join(self.project_root, parts[0])):
+        elif (self.project_root / parts[0]).is_file():
             self.doc_file = parts[0]
+            self._register_source_file(self.doc_file)
         else:
-            raise self.error("Invalid :doc: option: file `%s` does not exist"
-                             % parts[0])
+            raise self.error("Invalid :doc: option in ..%s directive: file "
+                             "`%s` does not exist" % (self.name, parts[0]))
 
         if len(parts) <= 1:
             self.doc_var = "doc_" + self.obj_name
         elif re.fullmatch(rx_cc_id, parts[1]):
             self.doc_var = parts[1]
         else:
-            raise self.error("Invalid :doc: option: `%s` is not a valid C++ "
-                             "identifier" % parts[1])
-
-        if len(parts) > 2:
-            raise self.error("Invalid :doc: option: it must have form "
-                             "'filename [docname]'")
+            raise self.error("Invalid :doc: option in ..%s directive: `%s` "
+                             "is not a valid C++ identifier"
+                             % (self.name, parts[1]))
 
 
     def _parse_option_tests(self):
@@ -253,31 +431,29 @@ class XobjectDirective(SphinxDirective):
         Process the optional option `:tests:`, and set the fields
         `self.test_file` and `self.tests_github_url`.
         """
-        self.test_file = None
-        self.tests_github_url = None
-        testfile = self.options.get("tests", "").strip()
-
-        if not testfile:
+        if "tests" not in self.options:
             return
-        elif os.path.isfile(os.path.join(self.project_root, testfile)):
-            self.test_file = testfile
-            self.tests_github_url = self.permalink(testfile)
-        else:
-            raise self.error("Invalid :tests: option: file `%s` does not exist"
-                             % testfile)
+
+        testfile = self.options["tests"].strip()
+        if not (self.project_root / testfile).is_file():
+            raise self.error("Invalid :tests: option in ..%s directive: file "
+                             "`%s` does not exist" % (self.name, testfile))
+        self.test_file = testfile
+        self.tests_github_url = self.permalink(testfile)
+        self._register_source_file(self.test_file)
 
 
     def _parse_option_settable(self):
         """
         Process the option `:settable:`, which is available for
-        `:xdata:` directives only, and indicates that the property
+        `:xattr:` directives only, and indicates that the property
         being documented also supports a setter interface.
         """
         setter = self.options.get("settable", "").strip()
 
         if setter:
-            if self.name != "xdata":
-                raise self.error("Option :settable: is not valid for a :%s: "
+            if not(self.name == "xattr" or self.obj_name == "__setitem__"):
+                raise self.error("Option :settable: is not valid for a ..%s "
                                  "directive" % self.name)
             self.setter = setter
         else:
@@ -287,8 +463,8 @@ class XobjectDirective(SphinxDirective):
     def _parse_option_deletable(self):
         self.deletable = "deletable" in self.options
 
-        if self.deletable and self.name != "xdata":
-            raise self.error("Option :deletable: is not valid for a :%s: "
+        if self.deletable and self.name != "xattr":
+            raise self.error("Option :deletable: is not valid for a ..%s "
                              "directive" % self.name)
 
 
@@ -303,136 +479,104 @@ class XobjectDirective(SphinxDirective):
         return pattern.format(filename=filename, line1=line1, line2=line2)
 
 
-    def _locate_sources(self, filename, funcname1, funcname2, docname):
+    def _locate_fn_source(self, filename, fnname):
         """
-        Locate either the function body or the documentation string or
-        both in the source file `filename`.
+        Find the body of the function `fnname` within the file `filename`.
 
-        See :meth:`_locate_fn_source` and :meth:`_locate_doc_source`
-        for details.
+        If successful, this function returns the URL for the located
+        function.
         """
-        full_filename = os.path.join(self.project_root, filename)
-        with open(full_filename, "r", encoding="utf-8") as inp:
-            lines = list(inp)
-        if funcname1:
-            line1, line2 = self._locate_fn_source(filename, funcname1, lines)
-            self.src_line_first = line1
-            self.src_line_last = line2
-            self.src_github_url = self.permalink(filename, line1, line2)
-        if funcname2:
-            line1, line2 = self._locate_fn_source(filename, funcname2, lines)
-            self.src2_line_first = line1
-            self.src2_line_last = line2
-            self.src2_github_url = self.permalink(filename, line1, line2)
-        if docname:
-            self._locate_doc_source(filename, docname, lines)
-
-
-    def _locate_fn_source(self, filename, fnname, lines):
-        """
-        Find the body of the function `fnname` within the `lines` that
-        were read from the file `filename`.
-
-        If successful, this function returns a tuple of the line
-        numbers of the start the end of the function.
-        """
-        rx_cc_function = re.compile(r"(\s*)"
-                                    r"(?:static\s+|inline\s+)*"
-                                    r"(?:void|oobj|py::oobj)\s+" +
-                                    fnname +
-                                    r"\s*\(.*\)\s*(?:const\s*)?\{\s*")
-        expect_closing = None
-        start_line = None
-        finish_line = None
-        for i, line in enumerate(lines):
-            if expect_closing:
-                if line.startswith(expect_closing):
-                    finish_line = i + 1
-                    break
-            elif fnname in line:
-                start_line = i + 1
-                mm = re.match(rx_cc_function, line)
-                if mm:
-                    expect_closing = mm.group(1) + "}"
+        txt = (self.project_root / filename).read_text(encoding="utf-8")
+        lines = txt.splitlines()
+        lines = StringList(lines, items=[(filename, i+1)
+                                         for i in range(len(lines))])
+        try:
+            kind = self.name[1:]  # remove initial 'x'
+            if filename.endswith(".py"):
+                if kind == "data":
+                    i, j = locate_python_variable(fnname, lines)
+                elif kind in ["class", "function", "method", "attr"]:
+                    i, j = locate_python_function(fnname, kind, lines)
+                    self.doc_lines = extract_python_docstring(lines[i:j])
                 else:
-                    mm = re.match(rx_cc_function, line + lines[i+1])
-                    if mm:
-                        expect_closing = mm.group(1) + "}"
-        if not start_line:
-            raise self.error("Could not find function `%s` in file `%s`"
-                             % (fnname, filename))
-        if not expect_closing:
-            raise self.error("Unexpected signature of function `%s` "
-                             "in file `%s` line %d"
-                             % (fnname, filename, start_line))
-        if not finish_line:
-            raise self.error("Could not locate the end of function `%s` "
-                             "in file `%s` line %d"
-                             % (fnname, filename, start_line))
-        return (start_line, finish_line)
+                    raise self.error("Unsupported directive %s for "
+                                     "a python source file" % self.name)
+            else:
+                if kind not in ["class", "function", "method", "attr"]:
+                    raise self.error("Unsupported directive %s for "
+                                     "a C++ source file" % self.name)
+                i, j = locate_cxx_function(fnname, kind, lines)
+
+            return self.permalink(filename, i + 1, j)
+
+        except ValueError as e:
+            msg = str(e).replace("<FILE>", "file " + filename)
+            raise self.error(msg) from None
 
 
-    def _locate_doc_source(self, filename, docname, lines):
+
+
+    def _extract_docs_from_source(self):
         """
-        Find the body of the function's docstring within the `lines`
-        of file `filename`. The docstring is expected to be in the
-        `const char* {docname}` variable. An error will be raised if
+        Find the body of the function's docstring inside the file
+        `self.doc_file`. The docstring is expected to be in the
+        `const char* {self.doc_var}` variable. An error will be raised if
         the docstring cannot be found.
-
-        Upon success, this function creates variables `self.doc_text`
-        containing the text of the docstring, `self.doc_line_start`
-        the line number of the doc string in the source file, and
-        lastly the property `self.doc_github_url`.
         """
+        if not self.doc_file:
+            return
+
+        txt = (self.project_root / self.doc_file).read_text(encoding="utf-8")
+        lines = txt.splitlines()
         rx_cc_docstring = re.compile(r"\s*(?:static\s+)?const\s+char\s*\*\s*" +
-                                     docname +
+                                     self.doc_var +
                                      r"\s*=\s*(.*?)\s*")
-        doc_text = None
-        start_line = None
-        finish_line = None
-        line_added = False
+        doc_lines = None
+        line1 = None
+        line2 = None
+        skip_next_line = False
         for i, line in enumerate(lines):
-            if line_added:
-                line_added = False
-            elif doc_text:
+            if skip_next_line:
+                skip_next_line = False
+            elif doc_lines:
                 end_index = line.find(')";')
                 if end_index == -1:
-                    doc_text += line
+                    doc_lines.append(line)
                 else:
-                    doc_text += line[:end_index]
-                    finish_line = i + 1
+                    doc_lines.append(line[:end_index])
+                    line2 = i + 1
                     break
-            elif docname in line:
-                start_line = i + 1
+            elif self.doc_var in line:
+                line1 = i + 1
                 mm = re.fullmatch(rx_cc_docstring, line)
                 if mm:
                     doc_start = mm.group(1)
                     if not doc_start:
                         doc_start = lines[i + 1].strip()
-                        line_added = True
+                        skip_next_line = True
+                        line1 += 1
                     if doc_start.startswith('"'):
-                        if doc_start.endswith('";'):
-                            doc_text = doc_start[1:-2]
-                            finish_line = start_line + line_added
-                            break
-                        else:
+                        if not doc_start.endswith('";'):
                             raise self.error("Unexpected document string: `%s` "
                                              "in file %s line %d"
-                                             % (doc_start, filename, i + 1))
+                                             % (doc_start, self.doc_file, line1))
+                        doc_lines = [doc_start[1:-2]]
+                        line2 = line1
+                        break
                     elif doc_start.startswith('R"('):
-                        doc_text = doc_start[3:] + "\n"
-        if doc_text is None:
+                        doc_lines = [doc_start[3:]]
+        if doc_lines is None:
             raise self.error("Could not find docstring `%s` in file `%s`"
-                             % (docname, filename))
-        if not finish_line:
+                             % (self.doc_var, self.doc_file))
+        if not line2:
             raise self.error("Docstring `%s` in file `%s` started on line %d "
                              "but did not finish"
-                             % (docname, filename, start_line))
+                             % (self.doc_var, self.doc_file, line1))
 
-        self.doc_text = doc_text.strip()
-        self.doc_line_start = start_line
-        self.doc_github_url = self.permalink(filename, start_line, finish_line)
-
+        self.doc_github_url = self.permalink(self.doc_file, line1, line2)
+        self.doc_lines = StringList(doc_lines,
+                                    items=[(self.doc_file, line1 + i)
+                                           for i in range(len(doc_lines))])
 
 
     #---------------------------------------------------------------------------
@@ -446,19 +590,14 @@ class XobjectDirective(SphinxDirective):
         that, defers parsing of each part to :meth:`_parse_parameters`
         and :meth:`_parse_body` respectively.
         """
-        if self.name == "xdata":
+        if (self.name in ["xdata", "xattr", "xclass"] or
+                "--" not in self.doc_lines):
             self.parsed_params = []
-            self._parse_body(self.doc_text, self.doc_line_start)
+            self._parse_body(self.doc_lines)
             return
 
-        tmp = self.doc_text.split("--\n", 1)
-        if len(tmp) == 1 and self.doc_text.endswith("--"):
-            tmp = [self.doc_text[:-2], ""]
-        if len(tmp) == 1:
-            raise self.error("Docstring for `%s` does not contain '--\\n'"
-                             % self.obj_name)
-        signature_num_newlines = tmp[0].count("\n")
-        signature = tmp[0].strip()
+        iddash = self.doc_lines.index("--")
+        signature = "\n".join(self.doc_lines.data[:iddash])
         if not (signature.startswith(self.obj_name + "(") and
                 signature.endswith(")")):
             raise self.error("Unexpected docstring: should have started with "
@@ -467,7 +606,7 @@ class XobjectDirective(SphinxDirective):
         # strip objname and the parentheses
         signature = signature[(len(self.obj_name) + 1):-1]
         self._parse_parameters(signature)
-        self._parse_body(tmp[1], self.doc_line_start + signature_num_newlines)
+        self._parse_body(self.doc_lines[iddash + 1:])
 
 
     def _parse_parameters(self, sig):
@@ -481,6 +620,7 @@ class XobjectDirective(SphinxDirective):
         the following:
           - varname             # regular parameter
           - (varname, default)  # parameter with default
+          - (varname,)          # optional parameter (in square brackets)
           - "/"                 # separator for pos-only arguments
           - "*"                 # separator for kw-only arguments
           - "*" + varname       # positional varargs
@@ -494,15 +634,16 @@ class XobjectDirective(SphinxDirective):
         while i < len(sig):
             mm = re.match(rx_param, sig[i:])
             if mm:
-                if mm.group(1) is None:  # "special" variable
-                    assert mm.group(3)
+                if mm.group(3) is not None:   # "special" variable
                     parsed.append(mm.group(3))
-                elif mm.group(2) is None:  # without default
-                    assert mm.group(1)
-                    parsed.append(mm.group(1))
+                elif mm.group(4) is not None:
+                    parsed.append((mm.group(4),))
                 else:
-                    assert mm.group(1) and mm.group(2)
-                    parsed.append( (mm.group(1), mm.group(2)) )
+                    assert mm.group(1) is not None
+                    if mm.group(2) is None:  # without default
+                        parsed.append(mm.group(1))
+                    else:
+                        parsed.append( (mm.group(1), mm.group(2)) )
                 assert mm.pos == 0
                 i += mm.end()
             else:
@@ -512,10 +653,14 @@ class XobjectDirective(SphinxDirective):
         self.parsed_params = parsed
 
 
-    def _parse_body(self, body, line0):
+    def _parse_body(self, lines):
         """
         Parse/transform the body of the function's docstring.
         """
+        # TODO: work with the StringList `lines` directly without converting
+        #       it into a plain string
+        body = "\n".join(lines.data)
+        line0 = lines.offset(0) if body else 0  # offset of the first line
         self.parsed_body = self._split_into_sections(body, line0)
         for header, section, linenos in self.parsed_body:
             self._transform_codeblocks(section)
@@ -592,6 +737,10 @@ class XobjectDirective(SphinxDirective):
             line = lines[i]
             if line and line[0] != " ":
                 lines[i] = ".. xparam:: " + line
+                while lines[i].endswith("\\"):
+                    lines[i] = lines[i][:-1] + lines[i + 1]
+                    del lines[i + 1]
+                    del linenos[i + 1]
                 lines.insert(i + 1, "")
                 linenos.insert(i + 1, None)
             i += 1
@@ -718,50 +867,60 @@ class XobjectDirective(SphinxDirective):
 
     def _generate_nodes(self):
         title_text = self.qualifier + self.obj_name
-        h1_text = title_text + ("" if self.name == "xdata" else "()")
-        sect = nodes.section(ids=[title_text], classes=["x-function"])
-        sect += nodes.title("", h1_text)
-        sect += self._index_node(title_text)
-        sect += self._generate_signature(title_text)
-        sect += self._generate_signature_setter()
-        sect += self._generate_signature_deleter()
+        sect = nodes.section(ids=[title_text],
+                             classes=["x-function", self.name])
+        sect += self._index_node()
+        sect += self._generate_signature()
         sect += self._generate_body()
         return [sect]
 
 
-    def _index_node(self, targetname):
+    def _index_node(self):
+        if "noindex" in self.options:
+            return []
+        targetname = self.qualifier + self.obj_name
         text = self.obj_name
         if self.name == "xmethod":
             text += " (%s method)" % self.qualifier[:-1]
         if self.name == "xfunction":
             text += " (%s function)" % self.qualifier[:-1]
-        if self.name == "xdata":
+        if self.name == "xattr":
             text += " (%s attribute)" % self.qualifier[:-1]
         inode = addnodes.index(entries=[("single", text, targetname, "", None)])
         return [inode]
 
 
-    def _generate_signature(self, targetname):
+    def _generate_signature(self):
+        targetname = self.qualifier + self.obj_name
         sig_node = xnodes.div(classes=["sig-container"], ids=[targetname])
         sig_nodeL = xnodes.div(classes=["sig-body"])
-        self._generate_sigbody(sig_nodeL, "normal")
+        if self.name == "xclass":
+            sig_nodeL += self._generate_signature_class()
+        else:
+            self._generate_sigbody(sig_nodeL, "normal")
         sig_node += sig_nodeL
         sig_nodeR = xnodes.div(classes=["code-links"])
         self._generate_siglinks(sig_nodeR)
         sig_node += sig_nodeR
 
         # Tell Sphinx that this is a target for `:py:obj:` references
-        self.state.document.note_explicit_target(sig_node)
-        domain = self.env.get_domain("py")
-        domain.note_object(name=targetname,        # e.g. "datatable.Frame.cbind"
-                           objtype=self.name[1:],  # remove initial 'x'
-                           node_id=targetname)
-        return [sig_node]
+        if "noindex" not in self.options:
+            self.state.document.note_explicit_target(sig_node)
+            domain = self.env.get_domain("py")
+            domain.note_object(name=targetname,        # e.g. "datatable.Frame.cbind"
+                               objtype=self.name[1:],  # remove initial 'x'
+                               node_id=targetname)
+        out = [sig_node]
+        if self.name == "xattr":
+            if self.setter:
+                out += self._generate_signature_setter()
+            if self.deletable:
+                out += self._generate_signature_deleter()
+        return out
 
 
     def _generate_signature_setter(self):
-        if not self.setter:
-            return []
+        assert self.setter
         sig_node = xnodes.div(classes=["sig-container"])
         sig_nodeL = xnodes.div(classes=["sig-body"])
         self._generate_sigbody(sig_nodeL, "setter")
@@ -774,15 +933,23 @@ class XobjectDirective(SphinxDirective):
 
 
     def _generate_signature_deleter(self):
-        if not self.deletable:
-            return []
+        assert self.deletable
         sig_node = xnodes.div(classes=["sig-container"])
         body = xnodes.div(classes=["sig-body", "sig-main"])
-        body += xnodes.div(nodes.Text("del "), classes=["del-keyword"])
-        body += xnodes.div(nodes.Text(self.qualifier), classes=["sig-qualifier"])
+        body += xnodes.div(nodes.Text("del "), classes=["keyword"])
+        body += self._generate_qualifier()
         body += xnodes.div(nodes.Text(self.obj_name), classes=["sig-name"])
         sig_node += body
-        return sig_node
+        return [sig_node]
+
+
+    def _generate_signature_class(self):
+        assert self.name == "xclass"
+        body = xnodes.div(classes=["sig-main"])
+        body += xnodes.div(nodes.Text("class "), classes=["keyword"])
+        body += self._generate_qualifier()
+        body += xnodes.div(nodes.Text(self.obj_name), classes=["sig-name"])
+        return body
 
 
     def _generate_sigbody(self, node, kind):
@@ -804,33 +971,42 @@ class XobjectDirective(SphinxDirective):
             assert self.parsed_params[0] == "self"
             del self.parsed_params[0]
 
-        row1 = xnodes.div(classes=["sig-qualifier"])
-        ref = addnodes.pending_xref("", nodes.Text(self.qualifier),
-                                    reftarget=self.qualifier[:-1],
-                                    reftype="class", refdomain="py")
-        # Note: `ref` cannot be added directly: docutils requires that
-        # <reference> nodes were nested inside <TextElement> nodes.
-        row1 += nodes.generated("", "", ref)
-        node += row1
-
+        node += self._generate_qualifier()
         row2 = xnodes.div(classes=["sig-main"])
         self._generate_sigmain(row2, kind)
         node += row2
 
 
+    def _generate_qualifier(self):
+        node = xnodes.div(classes=["sig-qualifier"])
+        ref = addnodes.pending_xref("", nodes.Text(self.qualifier),
+                                    reftarget=self.qualifier[:-1],
+                                    reftype="class", refdomain="py")
+        # Note: `ref` cannot be added directly: docutils requires that
+        # <reference> nodes were nested inside <TextElement> nodes.
+        node += nodes.generated("", "", ref)
+        return node
+
     def _generate_siglinks(self, node):
-        node += a_node(href=self.src_github_url, text="source", new=True)
-        if self.doc_file != self.src_file:
+        if self.src_github_url:
+            node += a_node(href=self.src_github_url, text="source", new=True)
+        if self.doc_github_url and self.doc_file != self.src_file:
             node += a_node(href=self.doc_github_url, text="doc", new=True)
         if self.tests_github_url:
             node += a_node(href=self.tests_github_url, text="tests", new=True)
 
 
     def _generate_sigmain(self, node, kind):
-        div1 = xnodes.div(classes=["sig-name"])
-        div1 += nodes.Text(self.obj_name)
-        node += div1
-        if self.name == "xdata":
+        square_bracket_functions = ['__getitem__', '__setitem__', '__delitem__']
+
+        if self.obj_name in square_bracket_functions:
+            if self.obj_name == "__delitem__":
+                node += xnodes.div(nodes.Text("del "), classes=["keyword"])
+            node += xnodes.div(nodes.Text("self"), classes=["self", "param"])
+        else:
+            node += xnodes.div(nodes.Text(self.obj_name), classes=["sig-name"])
+
+        if self.name in ["xdata", "xattr"]:
             if kind == "setter":
                 equal_sign_node = nodes.inline("", nodes.Text(" = "), classes=["punct"])
                 param_node = xnodes.div(
@@ -841,16 +1017,22 @@ class XobjectDirective(SphinxDirective):
                                     children=[equal_sign_node, param_node])
                 node += params
         else:
-            node += nodes.inline("", nodes.Text("("),
-                                 classes=["sig-open-paren"])
+            if self.obj_name in square_bracket_functions:
+                node += xnodes.div(nodes.Text("["), classes=["sig-name"])
+            else:
+                node += nodes.inline("", nodes.Text("("),
+                                     classes=["sig-open-paren"])
             params = xnodes.div(classes=["sig-parameters"])
             last_i = len(self.parsed_params) - 1
+            printed = False
             for i, param in enumerate(self.parsed_params):
                 classes = ["param"]
-                if param == "self": classes += ["self"]
+                if param == "self": continue
                 if param == "*" or param == "/": classes += ["special"]
                 if i == last_i: classes += ["final"]
                 if isinstance(param, str):
+                    if printed:
+                        params += nodes.inline("", nodes.Text(", "), classes=["punct"])
                     if param in ["self", "*", "/"]:
                         ref = nodes.Text(param)
                     else:
@@ -858,21 +1040,43 @@ class XobjectDirective(SphinxDirective):
                     params += xnodes.div(ref, classes=classes)
                 else:
                     assert isinstance(param, tuple)
-                    param_node = a_node(text=param[0], href="#" + param[0])
-                    equal_sign_node = nodes.inline("", nodes.Text("="), classes=["punct"])
-                    # Add as nodes.literal, so that Sphinx wouldn't try to
-                    # "improve" quotation marks and ...s
-                    default_value_node = nodes.literal("", nodes.Text(param[1]),
-                                                      classes=["default"])
-                    params += xnodes.div(classes=classes, children=[
-                                            param_node,
-                                            equal_sign_node,
-                                            default_value_node
-                                         ])
-                if i < len(self.parsed_params) - 1:
-                    params += nodes.inline("", nodes.Text(", "), classes=["punct"])
-            params += nodes.inline("", nodes.Text(")"),
-                                   classes=["sig-close-paren"])
+                    if len(param) == 2:
+                        if printed:
+                            params += nodes.inline("", nodes.Text(", "), classes=["punct"])
+                        param_node = a_node(text=param[0], href="#" + param[0])
+                        equal_sign_node = nodes.inline("", nodes.Text("="), classes=["punct"])
+                        # Add as nodes.literal, so that Sphinx wouldn't try to
+                        # "improve" quotation marks and ...s
+                        default_value_node = nodes.literal("", nodes.Text(param[1]),
+                                                          classes=["default"])
+                        params += xnodes.div(classes=classes, children=[
+                                                param_node,
+                                                equal_sign_node,
+                                                default_value_node
+                                             ])
+                    else:
+                        assert len(param) == 1
+                        params += nodes.inline("", nodes.Text("["), classes=["punct"])
+                        if printed:
+                            params += nodes.inline("", nodes.Text(", "), classes=["punct"])
+                        param_node = a_node(text=param[0], href="#" + param[0])
+                        params += xnodes.div(param_node, classes=classes)
+                        params += nodes.inline("", nodes.Text("]"), classes=["punct"])
+                printed = True
+
+            if self.obj_name in square_bracket_functions:
+                params += nodes.inline("", nodes.Text(']'), classes=["sig-name"])
+            else:
+                params += nodes.inline("", nodes.Text(")"),
+                                       classes=["sig-close-paren"])
+            if self.obj_name == "__setitem__":
+                if not getattr(self, "setter"):
+                    self.setter = "values"
+                params += nodes.inline("", nodes.Text(" = "), classes=["punct"])
+                params += xnodes.div(
+                            a_node(text=self.setter, href="#" + self.setter),
+                            classes=["param"])
+
             node += params
 
 
@@ -880,7 +1084,7 @@ class XobjectDirective(SphinxDirective):
         out = xnodes.div(classes=["x-function-body"])
         for head, lines, linenos in self.parsed_body:
             if head:
-                lines = [head, "="*len(head), ""] + lines
+                lines = [head, "-"*len(head), ""] + lines
                 i0 = linenos[0]
                 linenos = [i0-3, i0-2, i0-1] + linenos
             assert len(lines) == len(linenos)
@@ -892,6 +1096,183 @@ class XobjectDirective(SphinxDirective):
 
 
 
+#-------------------------------------------------------------------------------
+# Helper functions
+#-------------------------------------------------------------------------------
+
+def locate_python_variable(name, lines):
+    """
+    Find declaration of a variable `name` within python source `lines`.
+
+    Returns a tuple (istart, iend) such that `lines[istart:iend]` would
+    contain the lines where the variable is declared. Variable declaration
+    must have the form of an assignment, i.e. "{name} = ...". Other ways
+    of declaring a variable are not supported.
+
+    A ValueError is raised if variable declaration cannot be found.
+
+    NYI: detection of multi-line variable declarations, such as dicts,
+    lists, multi-line strings, etc.
+    """
+    assert isinstance(name, str)
+    rx = re.compile(r"\s*%s\s*=\s*\S" % name)
+    for i, line in enumerate(lines.data):
+        if re.match(rx, line):
+            return (i, i+1)
+    raise ValueError("Could not find variable `%s` in <FILE>" % name)
+
+
+
+def locate_python_function(name, kind, lines):
+    """
+    Find declaration of a class/function `name` in python source `lines`.
+
+    Returns a tuple (istart, iend) such that `lines[istart:iend]` would
+    contain the lines where the class/function is declared. The body of
+    the class/function starts with "(class|def) {name}..." and ends
+    at a line with the indentation level equal or smaller than the
+    level of the declaration start.
+
+    A ValueError is raised if variable declaration cannot be found.
+    """
+    assert kind in ["class", "function", "method", "attr"]
+    keyword = "class" if kind == "class" else "def"
+    rx_start = re.compile(r"\s*%s\s+%s\b" % (keyword, name))
+    indent = None
+    istart = None
+    iend = -1
+    for i, line in enumerate(lines.data):
+        unindented_line = line.lstrip()
+        if not unindented_line:  # skip blank lines
+            continue
+        line_indent_level = len(line) - len(unindented_line)
+        if istart is None:
+            if re.match(rx_start, line):
+                indent = line_indent_level
+                istart = i
+        else:
+            if line_indent_level <= indent:
+                break
+        iend = i
+
+    iend += 1
+    if istart is None:
+        raise ValueError("Could not find %s `%s` in <FILE>" % (kind, name))
+
+    # Also include @decorations, if any
+    while istart > 0:
+        line = lines[istart - 1]
+        unindented_line = line.lstrip()
+        line_indent_level = len(line) - len(unindented_line)
+        if line_indent_level == indent and unindented_line[:1] == '@':
+            istart -= 1
+        else:
+            break
+
+    return (istart, iend)
+
+
+def locate_cxx_function(name, kind, lines):
+    if kind == "class":
+        rx_start = re.compile(r"(\s*)class (?:\w+::)*" + name + r"\s*")
+    else:
+        rx_start = re.compile(r"(\s*)"
+                              r"(?:static\s+|inline\s+)*"
+                              r"(?:[\w:*&<> ]+)\s+" +
+                              name +
+                              r"\s*\(.*\)\s*" +
+                              r"(?:const\s*|noexcept\s*|override\s*)*" +
+                              r"\{\s*")
+    expect_closing = None
+    istart = None
+    ifinish = None
+    for i, line in enumerate(lines.data):
+        if expect_closing:
+            if line.startswith(expect_closing):
+                ifinish = i + 1
+                break
+        elif name in line:
+            istart = i
+            mm = re.match(rx_start, line)
+            if mm:
+                expect_closing = mm.group(1) + "}"
+            else:
+                mm = re.match(rx_start, line + lines[i+1])
+                if mm:
+                    expect_closing = mm.group(1) + "}"
+    if not istart:
+        raise ValueError("Could not find %s `%s` in <FILE>" % (kind, name))
+    if not expect_closing:
+        raise ValueError("Unexpected signature of %s `%s` in <FILE> "
+                         "line %d" % (kind, name, istart))
+    if not ifinish:
+        raise ValueError("Could not locate the end of %s `%s` in <FILE> "
+                         "line %d" % (kind, name, istart))
+    return (istart, ifinish)
+
+
+def extract_python_docstring(lines):
+    """
+    Given a list of lines that contain a class/function definition,
+    this function will find the docstring (if any) within those lines
+    and return it dedented. The return value is a StringList.
+
+    If there is no docstring, return empty StringList.
+    """
+    i = 0
+    while i < len(lines):  # skip decorators
+        uline = lines[i].lstrip()
+        if uline.startswith("@"):
+            i += 1
+        else:
+            break
+    mm = re.match(r"(class|def)\s+(\w+)\s*", uline)
+    if not mm:
+        raise ValueError("Unexpected function/class declaration: %r" % uline)
+    name = mm.group(2)
+    uline = uline[mm.end():]
+
+    if mm.group(1) == "class" and uline == ":":
+        i += 1
+    elif uline.startswith("("):
+        while i + 1 < len(lines):
+            i += 1
+            if uline.endswith("):"):
+                break
+            else:
+                uline = lines[i]
+    else:
+        raise ValueError("Unexpected function/class declaration: %r" % lines[i])
+
+    uline = lines[i].lstrip()
+    indent0 = len(lines[i]) - len(uline)
+    if uline.startswith('"""'):
+        end = '"""'
+    elif uline.startswith("'''"):
+        end = "'''"
+    else:
+        return StringList()
+
+    res_data = []
+    res_items = []
+    if len(uline) > 3:
+        res_data.append(uline[3:])
+        res_items.append(lines.info(i))
+    while i + 1 < len(lines):
+        i += 1
+        line = lines[i][indent0:]
+        if end in line:
+            line = line[:line.find(end)].strip()
+            if line:
+                res_data.append(line)
+                res_items.append(lines.info(i))
+            break
+        else:
+            res_data.append(line)
+            res_items.append(lines.info(i))
+    return StringList(res_data, items=res_items)
+
+
 
 #-------------------------------------------------------------------------------
 # XparamDirective
@@ -899,51 +1280,62 @@ class XobjectDirective(SphinxDirective):
 
 class XparamDirective(SphinxDirective):
     has_content = True
-    required_arguments = 2
+    required_arguments = 1
     optional_arguments = 0
     final_argument_whitespace = True
 
     def run(self):
         self._parse_arguments()
-        id0 = self.param.strip("*/()[]")
-        root = xnodes.div(classes=["xparam-box"], ids=[id0])
         head = xnodes.div(classes=["xparam-head"])
-        if id0 in ["return", "except"]:
-            param_node = xnodes.div(classes=["param", id0])
-            param_node += nodes.Text(id0)
-        else:
-            param_node = xnodes.div(classes=["param"])
-            param_node += nodes.Text(self.param)
-        head += param_node
         types_node = xnodes.div(classes=["types"])
+        desc_node = xnodes.div(classes=["xparam-body"])
+        root = xnodes.div(head, desc_node)
+        for i, param in enumerate(self.params):
+            id0 = param.strip("*/()[]")
+            root = xnodes.div(root, ids=[id0], classes=["xparam-box"])
+            if i > 0:
+                head += xnodes.div(", ", classes=["sep"])
+            if id0 in ["return", "except"]:
+                head += xnodes.div(id0, classes=["param", id0])
+            else:
+                head += xnodes.div(param, classes=["param"])
         types_str = " | ".join("``%s``" % p for p in self.types)
         self.state.nested_parse(StringList([types_str]), self.content_offset,
                                 types_node)
         assert isinstance(types_node[0], nodes.paragraph)
         types_node.children = types_node[0].children
         head += types_node
-        root += head
-        desc_node = xnodes.div(classes=["xparam-body"])
         self.state.nested_parse(self.content, self.content_offset, desc_node)
-        root += desc_node
         return [root]
 
 
     def _parse_arguments(self):
-        self.param = self.arguments[0].rstrip(":")
+        params, args = self.arguments[0].split(":", 1)
+        self.params = [p.strip() for p in params.split(",")]
         self.types = []
 
         rx_separator = re.compile(r"(?:,?\s+or\s+|\s*[,\|]\s*)")
-        args = self.arguments[1]
+        opening_brackets = "[({'\""
+        closing_brackets = "])}'\""
+        args = args.strip()
         i0 = 0
-        bracket_level = 0
+        brackets = []
         i = 0
         while i < len(args):  # iterate by characters
-            if args[i] in "[({'\"":
-                bracket_level += 1
-            elif args[i] in "\"'})]":
-                bracket_level -= 1
-            elif bracket_level == 0:
+            if brackets:
+                closing_bracket = brackets[-1]
+                if args[i] == closing_bracket:
+                    brackets.pop()
+                elif closing_bracket in ['"', "'"]:
+                    pass
+                elif args[i] in opening_brackets:
+                    j = opening_brackets.find(args[i])
+                    brackets.append(closing_brackets[j])
+
+            elif args[i] in opening_brackets:
+                j = opening_brackets.find(args[i])
+                brackets.append(closing_brackets[j])
+            else:
                 mm = re.match(rx_separator, args[i:])
                 if mm:
                     self.types.append(args[i0:i])
@@ -952,6 +1344,7 @@ class XparamDirective(SphinxDirective):
                     continue
             i += 1
         assert i == len(args)
+        assert not brackets
         self.types.append(args[i0:])
 
 
@@ -969,13 +1362,19 @@ class XversionaddedDirective(SphinxDirective):
 
     def run(self):
         version = self.arguments[0].strip()
+        target = "/releases/"
+        if not target.startswith("v"):
+            target += "v"
+        target += version
+        if len(version.split('.')) <= 2:
+            target += ".0"
 
         node = xnodes.div(classes=["x-version-added"])
         node += nodes.Text("New in version ")
         node += nodes.inline("", "",
             addnodes.pending_xref("", nodes.Text(version),
                 refdomain="std", reftype="doc", refexplicit=True,
-                reftarget="/releases/"+version))
+                reftarget=target))
         return [node]
 
 
@@ -1016,12 +1415,74 @@ def depart_a(self, node):
 
 
 #-------------------------------------------------------------------------------
-# Setup
+# Event handlers
 #-------------------------------------------------------------------------------
-def fix_html_titles(app, pagename, templatename, context, doctree):
+
+def get_file_timestamp(root, filename):
+    filepath = pathlib.Path(root) / filename
+    if filepath.is_file():
+        return filepath.stat().st_mtime
+    else:
+        return 1.0e+300
+
+
+# https://www.sphinx-doc.org/en/master/extdev/appapi.html#event-env-get-outdated
+def on_env_get_outdated(app, env, added, changed, removed):
+    if not hasattr(env, "xobject"):
+        return []
+    root = env.config.xf_project_root
+    docs_to_update = []
+    for docname, record in env.xobject.items():
+        for filename in record['sources']:
+            file_time = get_file_timestamp(root, filename)
+            if file_time > record['timestamp']:
+                docs_to_update.append(docname)
+                break
+    return docs_to_update
+
+
+# https://www.sphinx-doc.org/en/master/extdev/appapi.html#event-env-purge-doc
+def on_env_purge_doc(app, env, docname):
+    if hasattr(env, "xobject"):
+        env.xobject.pop(docname, None)
+
+
+# https://www.sphinx-doc.org/en/master/extdev/appapi.html#event-env-merge-info
+def on_env_merge_info(app, env, docnames, other):
+    if not hasattr(other, "xobject"):
+        return
+    if hasattr(env, "xobject"):
+        env.xobject.update(other.xobject)
+    else:
+        env.xobject = other.xobject
+
+
+# https://www.sphinx-doc.org/en/master/extdev/appapi.html#event-source-read
+def on_source_read(app, docname, source):
+    assert isinstance(source, list) and len(source) == 1
+    txt = source[0]
+    mm = re.match(r"\s*\.\. (xfunction|xmethod|xclass|xdata|xattr):: (.*)", txt)
+    if mm:
+        kind = mm.group(1)
+        name = mm.group(2)
+        # qualifier = name[:name.rfind('.')]
+        title = re.sub(r"_", "\\_", name)
+        if kind in ["xfunction", "xmethod"]:
+            title += "()"
+        txt = title + "\n" + ("=" * len(title)) + "\n\n" + \
+              ".. py:currentmodule:: datatable\n\n" + txt
+        source[0] = txt
+
+
+def on_html_page_context(app, pagename, templatename, context, doctree):
     if pagename in title_overrides:
         context["title"] = title_overrides[pagename]
 
+
+
+#-------------------------------------------------------------------------------
+# Setup
+#-------------------------------------------------------------------------------
 
 def setup(app):
     app.setup_extension("sphinxext.xnodes")
@@ -1034,9 +1495,20 @@ def setup(app):
     app.add_directive("xdata", XobjectDirective)
     app.add_directive("xfunction", XobjectDirective)
     app.add_directive("xmethod", XobjectDirective)
+    app.add_directive("xclass", XobjectDirective)
+    app.add_directive("xattr", XobjectDirective)
     app.add_directive("xparam", XparamDirective)
     app.add_directive("xversionadded", XversionaddedDirective)
+
+    app.connect("env-get-outdated", on_env_get_outdated)
+    app.connect("env-purge-doc", on_env_purge_doc)
+    app.connect("env-merge-info", on_env_merge_info)
+    app.connect("source-read", on_source_read)
+    app.connect("html-page-context", on_html_page_context)
+
     app.add_node(a_node, html=(visit_a, depart_a))
     app.add_role("xparam-ref", xparamref)
-    app.connect("html-page-context", fix_html_titles)
-    return {"parallel_read_safe": True, "parallel_write_safe": True}
+    return {"parallel_read_safe": True,
+            "parallel_write_safe": True,
+            "env_version": 1,
+            }

@@ -28,11 +28,14 @@ from .lib._datatable import (
     cbind,
     cut,
     fread,
+    FExpr,
     ifelse,
     init_styles,
     intersect,
     iread,
     join,
+    Namespace,
+    qcut,
     rbind,
     repeat,
     rowall,
@@ -77,6 +80,7 @@ __all__ = (
     "dt",
     "exp",
     "f",
+    "FExpr",
     "first",
     "float32",
     "float64",
@@ -101,6 +105,7 @@ __all__ = (
     "median",
     "obj64",
     "options",
+    "qcut",
     "rbind",
     "repeat",
     "rowall",
@@ -137,13 +142,14 @@ str32 = stype.str32
 str64 = stype.str64
 obj64 = stype.obj64
 dt = datatable
+del datatable
 
 # This will run only in Jupyter notebook
 init_styles()
 
-options = datatable.options.Config(options={}, prefix="")
-datatable.lib._datatable.initialize_options(options)
-datatable.lib._datatable.initialize_final()
+options = dt.options.Config(options={}, prefix="")
+dt.lib._datatable.initialize_options(options)
+dt.lib._datatable.initialize_final()
 
 def open(path):
     """

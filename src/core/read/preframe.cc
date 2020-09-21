@@ -99,10 +99,9 @@ void PreFrame::preallocate(size_t nrows) {
   * returned. This number may be less than `nrows_in_chunk0` if the
   * total number of rows exceeds `max_nrows` parameter.
   *
-  * The `ordered_loop` variable allows us to retrieve information
-  * about the current state of iteration, and to wait until the
-  * currently pending data is safely written if we need to reallocate
-  * buffers.
+  * The `otask` variable allows us to retrieve information about the
+  * current state of iteration, and to wait until the currently
+  * pending data is safely written if we need to reallocate buffers.
   *
   * This function will also adjust the `nrows_written` counter, and
   * thus should be called from the ordered section only.
@@ -136,7 +135,9 @@ size_t PreFrame::ensure_output_nrows(size_t nrows_in_chunk0, size_t ichunk,
           nrows_max,
           std::max(
               1024 + nrows_allocated_,
-              static_cast<size_t>(1.2 * nrows_new * nchunks / (ichunk + 1))
+              static_cast<size_t>(1.2 * static_cast<double>(nrows_new)
+                                      * static_cast<double>(nchunks)
+                                      / static_cast<double>(ichunk + 1))
       ));
     }
 
@@ -152,11 +153,13 @@ size_t PreFrame::ensure_output_nrows(size_t nrows_in_chunk0, size_t ichunk,
       for (const auto& col : columns_) {
         archived_size += col.archived_size();
       }
-      double avg_size_per_row = 1.0 * archived_size / nrows_written_;
-      if (nrows_extra * avg_size_per_row > memory_limit) {
+      double avg_size_per_row = static_cast<double>(archived_size)
+                                / static_cast<double>(nrows_written_);
+      if (static_cast<double>(nrows_extra) * avg_size_per_row > static_cast<double>(memory_limit)) {
         nrows_extra = std::max(
             nrows_in_chunk,
-            static_cast<size_t>(memory_limit / avg_size_per_row)
+            static_cast<size_t>(static_cast<double>(memory_limit)
+                                / avg_size_per_row)
         );
         nrows_new = nrows_written_ + nrows_extra;
       }
@@ -190,8 +193,10 @@ void PreFrame::archive_column_chunks(size_t expected_nrows) {
 
   if (!tempfile_ && memory_limit != MEMORY_UNLIMITED) {
     size_t current_memory = total_allocsize();
-    double new_memory = 1.0 * expected_nrows / nrows_allocated_ * current_memory;
-    if (new_memory > 0.95 * memory_limit) {
+    double new_memory = static_cast<double>(expected_nrows)
+        / static_cast<double>(nrows_allocated_)
+        * static_cast<double>(current_memory);
+    if (new_memory > 0.95 * static_cast<double>(memory_limit)) {
       init_tempfile();
     }
   }
@@ -208,6 +213,12 @@ void PreFrame::init_tempfile() {
     g_->d() << "Created temporary file " << name;
   }
 }
+
+
+std::shared_ptr<TemporaryFile>& PreFrame::get_tempfile() {
+  return tempfile_;
+}
+
 
 
 
@@ -277,13 +288,15 @@ void PreFrame::set_ptypes(const std::vector<PT>& types) {
   xassert(types.size() == columns_.size());
   size_t i = 0;
   for (auto& col : columns_) {
-    col.force_ptype(types[i++]);
+    col.set_ptype(types[i++]);
+    col.outcol().set_stype(col.get_stype());
   }
 }
 
 void PreFrame::reset_ptypes() {
   for (auto& col : columns_) {
-    col.force_ptype(PT::Mu);
+    col.set_ptype(PT::Mu);
+    col.outcol().set_stype(col.get_stype());
   }
 }
 
@@ -320,27 +333,10 @@ const char* PreFrame::print_ptypes() const {
 size_t PreFrame::n_columns_in_output() const {
   size_t n = 0;
   for (const auto& col : columns_) {
-    n += col.is_in_output();
+    n += !col.is_dropped();
   }
   return n;
 }
-
-size_t PreFrame::n_columns_in_buffer() const {
-  size_t n = 0;
-  for (const auto& col : columns_) {
-    n += col.is_in_buffer();
-  }
-  return n;
-}
-
-size_t PreFrame::n_columns_to_reread() const {
-  size_t n = 0;
-  for (const auto& col : columns_) {
-    n += col.is_type_bumped();
-  }
-  return n;
-}
-
 
 size_t PreFrame::total_allocsize() const {
   size_t allocsize = sizeof(*this);
@@ -357,16 +353,6 @@ size_t PreFrame::total_allocsize() const {
 // Finalizing
 //------------------------------------------------------------------------------
 
-void PreFrame::prepare_for_rereading() {
-  for (auto& col : columns_) {
-    col.outcol().archive_data(nrows_written_, tempfile_);
-    col.prepare_for_rereading();
-  }
-  nrows_written_ = 0;
-  nrows_allocated_ = 0;
-}
-
-
 dtptr PreFrame::to_datatable() && {
   std::vector<::Column> ccols;
   std::vector<std::string> names;
@@ -379,7 +365,7 @@ dtptr PreFrame::to_datatable() && {
     tempfile_ = nullptr;
   }
   for (auto& col : columns_) {
-    if (!col.is_in_output()) continue;
+    if (col.is_dropped()) continue;
     auto& outcol = col.outcol();
     col.outcol().archive_data(nrows_written_, tempfile_);
     names.push_back(col.get_name());

@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------
-// Copyright 2018 H2O.ai
+// Copyright 2018-2020 H2O.ai
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the "Software"),
@@ -21,7 +21,8 @@
 //------------------------------------------------------------------------------
 #ifndef dt_PYTHON_DICT_h
 #define dt_PYTHON_DICT_h
-#include <iterator>        // std::input_iterator_tag
+#include <initializer_list>  // std::initializer_list
+#include <iterator>          // std::input_iterator_tag
 #include "python/obj.h"
 #include "python/python.h"
 namespace py {
@@ -81,6 +82,7 @@ class odict : public oobj {
     odict(odict&&) = default;
     odict& operator=(const odict&) = default;
     odict& operator=(odict&&) = default;
+    odict(std::initializer_list<oobj>);
 
     odict copy() const;
 

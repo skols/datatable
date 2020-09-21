@@ -34,13 +34,10 @@ class OpCodes(enum.Enum):
 
     # Misc
     NOOP = 0
-    COL = 1
     CAST = 2
     SETPLUS = 3
     SETMINUS = 4
     SHIFTFN = 5
-    IFELSE = 6
-    CUT = 7
 
     # Unary
     UPLUS = 101
@@ -48,24 +45,11 @@ class OpCodes(enum.Enum):
     UINVERT = 103
 
     # Binary
-    PLUS = 201
-    MINUS = 202
-    MULTIPLY = 203
-    DIVIDE = 204
-    INTDIV = 205
-    MODULO = 206
-    POWEROP = 207
     AND = 208
     XOR = 209
     OR = 210
     LSHIFT = 211
     RSHIFT = 212
-    EQ = 213
-    NE = 214
-    LT = 215
-    GT = 216
-    LE = 217
-    GE = 218
 
     # String
     RE_MATCH = 301
@@ -205,107 +189,107 @@ class Expr:
                                     ", ".join(repr(x) for x in self._params))
 
     def extend(self, other):
-        return Expr(OpCodes.SETPLUS, (self, other))
+        return core.FExpr(self).extend(other)
 
     def remove(self, other):
-        return Expr(OpCodes.SETMINUS, (self, other))
+        return core.FExpr(self).remove(other)
 
 
     #----- Binary operators ----------------------------------------------------
 
     def __add__(self, other):
-        return Expr(OpCodes.PLUS, (self, other))
+        return core.FExpr(self) + core.FExpr(other)
 
     def __sub__(self, other):
-        return Expr(OpCodes.MINUS, (self, other))
+        return core.FExpr(self) - core.FExpr(other)
 
     def __mul__(self, other):
-        return Expr(OpCodes.MULTIPLY, (self, other))
+        return core.FExpr(self) * core.FExpr(other)
 
     def __truediv__(self, other):
-        return Expr(OpCodes.DIVIDE, (self, other))
+        return core.FExpr(self) / core.FExpr(other)
 
     def __floordiv__(self, other):
-        return Expr(OpCodes.INTDIV, (self, other))
+        return core.FExpr(self) // core.FExpr(other)
 
     def __mod__(self, other):
-        return Expr(OpCodes.MODULO, (self, other))
+        return core.FExpr(self) % core.FExpr(other)
 
     def __pow__(self, other):
-        return Expr(OpCodes.POWEROP, (self, other))
+        return core.FExpr(self) ** core.FExpr(other)
 
     def __and__(self, other):
-        return Expr(OpCodes.AND, (self, other))
+        return core.FExpr(self) & core.FExpr(other)
 
     def __xor__(self, other):
-        return Expr(OpCodes.XOR, (self, other))
+        return core.FExpr(self) ^ core.FExpr(other)
 
     def __or__(self, other):
-        return Expr(OpCodes.OR, (self, other))
+        return core.FExpr(self) | core.FExpr(other)
 
     def __lshift__(self, other):
-        return Expr(OpCodes.LSHIFT, (self, other))
+        return core.FExpr(self) << core.FExpr(other)
 
     def __rshift__(self, other):
-        return Expr(OpCodes.RSHIFT, (self, other))
+        return core.FExpr(self) >> core.FExpr(other)
 
 
     def __radd__(self, other):
-        return Expr(OpCodes.PLUS, (other, self))
+        return core.FExpr(other) + core.FExpr(self)
 
     def __rsub__(self, other):
-        return Expr(OpCodes.MINUS, (other, self))
+        return core.FExpr(other) - core.FExpr(self)
 
     def __rmul__(self, other):
-        return Expr(OpCodes.MULTIPLY, (other, self))
+        return core.FExpr(other) * core.FExpr(self)
 
     def __rtruediv__(self, other):
-        return Expr(OpCodes.DIVIDE, (other, self))
+        return core.FExpr(other) / core.FExpr(self)
 
     def __rfloordiv__(self, other):
-        return Expr(OpCodes.INTDIV, (other, self))
+        return core.FExpr(other) // core.FExpr(self)
 
     def __rmod__(self, other):
-        return Expr(OpCodes.MODULO, (other, self))
+        return core.FExpr(other) % core.FExpr(self)
 
     def __rpow__(self, other):
-        return Expr(OpCodes.POWEROP, (other, self))
+        return core.FExpr(other) ** core.FExpr(self)
 
     def __rand__(self, other):
-        return Expr(OpCodes.AND, (other, self))
+        return core.FExpr(other) & core.FExpr(self)
 
     def __rxor__(self, other):
-        return Expr(OpCodes.XOR, (other, self))
+        return core.FExpr(other) ^ core.FExpr(self)
 
     def __ror__(self, other):
-        return Expr(OpCodes.OR, (other, self))
+        return core.FExpr(other) | core.FExpr(self)
 
     def __rlshift__(self, other):
-        return Expr(OpCodes.LSHIFT, (other, self))
+        return core.FExpr(other) << core.FExpr(self)
 
     def __rrshift__(self, other):
-        return Expr(OpCodes.RSHIFT, (other, self))
+        return core.FExpr(other) >> core.FExpr(self)
 
 
     #----- Relational operators ------------------------------------------------
 
     def __eq__(self, other):
-        return Expr(OpCodes.EQ, (self, other))
+        return core.FExpr(self) == core.FExpr(other)
 
     def __ne__(self, other):
-        return Expr(OpCodes.NE, (self, other))
+        return core.FExpr(self) != core.FExpr(other)
 
     def __lt__(self, other):
-        return Expr(OpCodes.LT, (self, other))
+        return core.FExpr(self) < core.FExpr(other)
 
     def __gt__(self, other):
-        return Expr(OpCodes.GT, (self, other))
+        return core.FExpr(self) > core.FExpr(other)
 
     def __le__(self, other):
-        return Expr(OpCodes.LE, (self, other))
+        return core.FExpr(self) <= core.FExpr(other)
 
     def __ge__(self, other):
-        return Expr(OpCodes.GE, (self, other))
+        return core.FExpr(self) >= core.FExpr(other)
 
 
     #----- Unary operators -----------------------------------------------------
@@ -338,106 +322,27 @@ class Expr:
 
     def __invert__(self):
         """Unary inversion: ~expr."""
-        return Expr(OpCodes.UINVERT, (self,))
+        return ~core.FExpr(self)
 
     def __neg__(self):
         """Unary minus: -expr."""
-        return Expr(OpCodes.UMINUS, (self,))
+        return -core.FExpr(self)
 
     def __pos__(self):
         """Unary plus (no-op)."""
-        return Expr(OpCodes.UPLUS, (self,))
+        return +core.FExpr(self)
 
 
     #----- String functions ----------------------------------------------------
 
     def len(self):
-        return Expr(OpCodes.LEN, (self,))
+        return core.FExpr(self).len()
 
     def re_match(self, pattern, flags=None):
-        return Expr(OpCodes.RE_MATCH, (self,), (pattern, flags))
+        return core.FExpr(self).re_match(pattern, flags=flags)
 
 
 
-#-------------------------------------------------------------------------------
-# FrameProxy
-#-------------------------------------------------------------------------------
-
-class FrameProxy:
-    """
-    Helper object that enables lazy evaluation semantics.
-
-    The "standard" instance of this class is called ``f`` and is exported in the
-    main :module:`datatable` namespace. This variable is only used in the
-    ``datatable(rows=..., select=...)`` call, and serves as a namespace for the
-    source datatable's columns. For example,
-
-        f.colName
-
-    within the ``datatable(...)`` call will evaluate to the ``datatable``'s
-    column whose name is "colName".
-
-    Additionally, there is also instance ``ff`` which is used to refer to the
-    second Frame in expressions involving two DataTables (joins).
-
-    The purpose of ``f`` is:
-      1. to serve as a shorthand for the Frame being operated on, which
-         usually improves formulas readability;
-      2. to allow accessing columns via "." syntax, rather than using more
-         verbose square brackets;
-      3. to provide lazy evaluation semantics: for example if ``d`` is a
-         Frame, then ``d["A"] + d["B"] + d["C"]`` evaluates immediately in
-         2 steps and returns a single-column Frame containing sum of
-         columns A, B and C. At the same time ``f.A + f.B + f.C`` does not
-         evaluate at all until after it is applied to ``d``, and then it is
-         computed in a single step, optimized depending on the presence of
-         any other components of a single Frame call.
-
-    Examples
-    --------
-    >>> import datatable as dt
-    >>> from datatable import f  # Standard name for a DatatableProxy object
-    >>> d0 = dt.Frame([[1, 2, 3], [4, 5, -6], [0, 2, 7]], names=list("ABC"))
-    >>>
-    >>> # Select all rows where column A is positive
-    >>> d1 = d0[f.A > 0, :]
-    >>> # Construct column D which is a sum of A, B, and C
-    >>> d2 = d0[:, {"D": f.A + f.B + f.C}]
-    >>>
-    >>> # If needed, formulas based on `f` can be stored and reused later
-    >>> expr = f.A + f.B + f.C
-    >>> d3 = d0[:, expr]
-    >>> d4 = d0[expr > 0, expr]
-    """
-    __slots__ = ["_id"]
-
-    # Developer notes:
-    # This class uses dynamic name resolution to convert arbitrary attribute
-    # strings into proper column indices. Thus, we should avoid using any
-    # internal attributes or method names that have a chance of clashing with
-    # user's column names.
-
-    def __init__(self, id_):
-        self._id = id_
-
-
-    def __getattr__(self, name):
-        """Retrieve column `name` from the datatable."""
-        return self[name]
-
-
-    def __getitem__(self, item):
-        if not isinstance(item, (int, str, slice)):
-            from datatable import stype, ltype
-            if not(item in [bool, int, float, str, object, None] or
-                   isinstance(item, (stype, ltype))):
-                from datatable.exceptions import TypeError
-                raise TypeError("Column selector should be an integer, string, "
-                                "or slice, not %r" % type(item))
-        return Expr(OpCodes.COL, (item,), (self._id,))
-
-
-
-f = FrameProxy(0)
-g = FrameProxy(1)
+f = core.Namespace()
+g = core.Namespace()
 core._register_function(9, Expr);

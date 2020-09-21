@@ -102,11 +102,11 @@ class EvalContext
 
   private:
     // Inputs
-    Expr  iexpr_;
-    Expr  jexpr_;
-    Expr  byexpr_;
-    Expr  sortexpr_;
-    Expr  rexpr_;
+    std::shared_ptr<FExpr>  iexpr_;
+    std::shared_ptr<FExpr>  jexpr_;
+    std::shared_ptr<FExpr>  byexpr_;
+    std::shared_ptr<FExpr>  sortexpr_;
+    std::shared_ptr<FExpr>  rexpr_;
 
     // Runtime
     frameVec   frames_;
@@ -117,7 +117,8 @@ class EvalContext
     strvec     newnames_;
     EvalMode   eval_mode_;
     bool       add_groupby_columns_;
-    size_t : 48;
+    bool       reverse_;
+    size_t : 40;
 
   public:
     EvalContext(DataTable*, EvalMode = EvalMode::SELECT);
@@ -150,6 +151,7 @@ class EvalContext
     void replace_groupby(Groupby&& gb_);
     void set_groupby_columns(Workframe&&);
 
+    bool reverse_sort();
   private:
     void compute_groupby_and_sort();
 

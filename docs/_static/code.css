@@ -16,8 +16,13 @@ div.rst-content dl dt {
 }
 
 div.rst-content dl dd {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
+
+div.rst-content .admonition-title {
+  margin: -9pt -9pt 10pt -9pt;
+}
+
 
 #first-section { display: flex; }
 
@@ -68,7 +73,7 @@ div.small-links div {
   border-style: none;
   border-radius: 0.3em;
   color: #000;
-  font-size: 90%;
+  font-size: 85%;
   padding: 0.15em 0.4em;
 }
 
@@ -106,10 +111,22 @@ div.small-links div {
   font-size: 95%;
 }
 
+.wy-menu-vertical li.toctree-l1,
+.wy-menu-vertical li.toctree-l2,
+.wy-menu-vertical li.toctree-l3,
+.wy-menu-vertical li.toctree-l4 {
+  font-size: 100%;
+}
+
 .wy-menu-vertical li>a span.toctree-expand,
 .wy-menu-vertical li.current>a span.toctree-expand {
   line-height: 1.8em;
 }
+
+.wy-menu-vertical li.current > a {
+  font-weight: normal;
+}
+
 
 /* First-level menu */
 .wy-menu-vertical li.toctree-l1 > a:hover {
@@ -121,7 +138,6 @@ div.small-links div {
   border: 1px solid #ccc;
   border-top-style: none;
   border-left-style: none;
-  font-weight: normal;
 }
 
 .wy-menu-vertical li.toctree-l1.current > a:hover {
@@ -140,7 +156,6 @@ div.small-links div {
 }
 
 .wy-menu-vertical li.toctree-l1 li.toctree-l2 > a {
-  font-weight: normal;
   padding: 3.5pt 0 3pt 24pt;
 }
 
@@ -177,7 +192,54 @@ div.small-links div {
 
 .wy-menu-vertical li.toctree-l1 li.toctree-l2 li.toctree-l3 > a.current {
   background-color: #fcfcfc;
-  font-weight: normal;
+}
+
+
+/* Fourth-level menu */
+.wy-menu-vertical li.toctree-l1 li.toctree-l2 li.toctree-l3 > ul {
+}
+
+.wy-menu-vertical li.toctree-l1 li.toctree-l2 li.toctree-l3 li.toctree-l4 > a {
+  padding: 1.5pt 0 1.5pt 48pt;
+}
+
+.wy-menu-vertical li.toctree-l1 li.toctree-l2 li.toctree-l3 li.toctree-l4 > a:hover {
+  background-color: #fff;
+}
+
+.wy-menu-vertical li.toctree-l1 li.toctree-l2 li.toctree-l3 li.toctree-l4 > a.current {
+  background-color: #fcfcfc;
+}
+
+
+
+/* ------- Api-table -------------------------------------------------------- */
+
+.rst-content table.docutils.api-table {
+  border: none;
+}
+
+.rst-content table.docutils.api-table tr td {
+  background: none !important;
+  border-style: none;
+  font-size: 100%;
+  padding: 0 16px 10px 0;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.rst-content table.docutils.api-table tr td>p {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.rst-content table.docutils.api-table td:first-child code.xref.literal {
+  background: transparent;
+  padding: 0;
+}
+
+.rst-content table.docutils.api-table td:first-child a:hover code.literal {
+  text-decoration: underline;
 }
 
 
@@ -362,5 +424,5 @@ p + ol.simple {
 
 ul.simple li,
 ol.simple li {
-  margin-bottom: 6pt;
+  margin-bottom: 3pt;
 }

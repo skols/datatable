@@ -55,10 +55,9 @@ extensions = [
     'sphinxext.xfunction',
     'sphinxext.dt_changelog',
     'sphinxext.ref_context',
-    # 'nbsphinx',
-    'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
-    'sphinx.ext.napoleon'
+    'sphinx.ext.napoleon',
+    'sphinx.ext.intersphinx',  # links to external documentation
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -88,6 +87,14 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store',
 pygments_style = 'sphinx'
 
 
+# -- Options for intersphinx extension ---------------------------------------
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'IPython': ('https://ipython.readthedocs.io/en/stable/', None),
+}
+
+
 # -- Options for Changelog extension -----------------------------------------
 
 changelog_issue_url = "https://github.com/h2oai/datatable/issues/{issue}"
@@ -102,7 +109,7 @@ xf_module_name = "datatable"
 xf_project_root = ".."
 
 try:
-    _ghcommit = subprocess.check_output(["git", "rev-parse", "master"],
+    _ghcommit = subprocess.check_output(["git", "rev-parse", "HEAD"],
                                         universal_newlines=True).strip()
     xf_permalink_url0 = ("https://github.com/h2oai/datatable/blob/" +
                          _ghcommit + "/{filename}")
@@ -153,11 +160,8 @@ html_static_path = ['_static']
 
 
 
-# -- Extension configuration -------------------------------------------------
-
-
-
 # -- Custom setup ------------------------------------------------------------
 
 def setup(app):
     app.add_css_file("code.css")
+

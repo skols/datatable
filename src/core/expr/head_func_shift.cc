@@ -22,6 +22,7 @@
 #include "column/shift.h"
 #include "expr/eval_context.h"
 #include "expr/expr.h"
+#include "expr/fexpr_column.h"
 #include "expr/head_func.h"
 #include "expr/workframe.h"
 #include "frame/py_frame.h"
@@ -83,10 +84,10 @@ ptrHead Head_Func_Shift::make(Op, const py::otuple& params) {
 
 
 Workframe Head_Func_Shift::evaluate_n(
-    const vecExpr& args, EvalContext& ctx, bool) const
+    const vecExpr& args, EvalContext& ctx) const
 {
   xassert(args.size() == 1);
-  Workframe inputs = args[0].evaluate_n(ctx);
+  Workframe inputs = args[0]->evaluate_n(ctx);
   if (shift_ == 0) {
     // do nothing
   }
@@ -160,11 +161,10 @@ static oobj make_pyexpr(dt::expr::Op opcode, otuple targs, otuple tparams) {
 }
 
 static oobj _shift_frame(oobj arg, int n) {
+  using namespace dt::expr;
   auto slice_all = oslice(oslice::NA, oslice::NA, oslice::NA);
-  auto f_all = make_pyexpr(dt::expr::Op::COL,
-                           otuple{ slice_all },
-                           otuple{ oint(0) });
-  auto shiftexpr = make_pyexpr(dt::expr::Op::SHIFTFN,
+  auto f_all = PyFExpr::make(new FExpr_ColumnAsArg(0, slice_all));
+  auto shiftexpr = make_pyexpr(Op::SHIFTFN,
                                otuple{ f_all },
                                otuple{ oint(n) });
   auto frame = static_cast<Frame*>(arg.to_borrowed_ref());
@@ -189,7 +189,7 @@ static oobj pyfn_shift(const PKArgs& args)
   if (arg0.is_frame()) {
     return _shift_frame(arg0, n);
   }
-  if (arg0.is_dtexpr()) {
+  if (arg0.is_dtexpr() || arg0.is_fexpr()) {
     return make_pyexpr(dt::expr::Op::SHIFTFN,
                        otuple{ arg0 }, otuple{ oint(n) });
   }

@@ -86,11 +86,11 @@ static py::oobj generate_stylesheet() {
           "  line-height: 6px;"
           "  padding: 0 0.5em;"
           "}\n"
-          ".datatable .boolean { background: #DDDD99; }\n"
+          ".datatable .bool    { background: #DDDD99; }\n"
           ".datatable .object  { background: #565656; }\n"
-          ".datatable .integer { background: #5D9E5D; }\n"
+          ".datatable .int     { background: #5D9E5D; }\n"
           ".datatable .float   { background: #4040CC; }\n"
-          ".datatable .string  { background: #CC4040; }\n"
+          ".datatable .str     { background: #CC4040; }\n"
           ".datatable .row_index {"
           "  background: var(--jp-border-color3);"
           "  border-right: 1px solid var(--jp-border-color0);"
@@ -147,22 +147,27 @@ void emit_stylesheet() {
 }  // namespace dt
 namespace py {
 
+static const char* doc_init_styles =
+R"(init_styles()
+--
+Inject datatable's stylesheets into the Jupyter notebook. This
+function does nothing when it runs in a normal Python environment
+outside of Jupyter.
+
+When datatable runs in a Jupyter notebook, it renders its Frames
+as HTML tables. The appearance of these tables is enhanced using
+a custom stylesheet, which must be injected into the notebook at
+any point on the page. This is exactly what this function does.
+
+Normally, this function is called automatically when datatable
+is imported. However, in some circumstances Jupyter erases these
+stylesheets (for example, if you run ``import datatable`` cell
+twice). In such cases, you may need to call this method manually.
+
+)";
 
 static PKArgs args_init_styles(
-  0, 0, 0, false, false, {}, "init_styles",
-  "Inject datatable's stylesheets into the Jupyter notebook. This\n"
-  "method does nothing when it runs in a normal Python environment\n"
-  "outside of Jupyter.\n"
-  "\n"
-  "When datatable runs in a Jupyter notebook, it renders its Frames\n"
-  "as HTML tables. The appearance of these tables is enhanced using\n"
-  "a custom stylesheet, which must be injected into the notebook at\n"
-  "any point on the page. This is exactly what this function does.\n"
-  "\n"
-  "Normally, this function is called automatically when datatable\n"
-  "is imported. However, in some circumstances Jupyter erases these\n"
-  "stylesheets (for example if you run ``import datatable`` cell\n"
-  "twice). In such cases, you may need to call this method manually.\n"
+  0, 0, 0, false, false, {}, "init_styles", doc_init_styles
 );
 
 static void init_styles(const PKArgs&) {

@@ -82,11 +82,11 @@ static Column op_isclose(Column&& xcol, Column&& ycol,
 
 
 Workframe Head_Func_IsClose::evaluate_n(
-            const vecExpr& args, EvalContext& ctx, bool) const
+            const vecExpr& args, EvalContext& ctx) const
 {
   xassert(args.size() == 2);
-  Workframe lhs = args[0].evaluate_n(ctx);
-  Workframe rhs = args[1].evaluate_n(ctx);
+  Workframe lhs = args[0]->evaluate_n(ctx);
+  Workframe rhs = args[1]->evaluate_n(ctx);
   if (lhs.ncols() == 1) lhs.repeat_column(rhs.ncols());
   if (rhs.ncols() == 1) rhs.repeat_column(lhs.ncols());
   if (lhs.ncols() != rhs.ncols()) {
@@ -127,8 +127,9 @@ only returns True/False, never NA.
 
 More specifically, isclose(x, y) is True if either of the following
 are true:
-  - ``x == y`` (including the case when x and y are NAs),
-  - ``abs(x - y) <= atol + rtol * abs(y)`` and neither x nor y are NA
+
+- ``x == y`` (including the case when x and y are NAs),
+- ``abs(x - y) <= atol + rtol * abs(y)`` and neither x nor y are NA
 
 The tolerance parameters ``rtol``, ``atol`` must be positive floats,
 and cannot be expressions.

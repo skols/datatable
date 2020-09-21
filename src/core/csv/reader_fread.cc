@@ -420,10 +420,10 @@ class ColumnTypeDetectionChunkster {
                   chunk0_size * 20  < input_size ? 11 : 1;
         if (nchunks > 1) chunk_distance = input_size / (nchunks - 1);
         if (f.verbose) {
+          auto r = static_cast<double>(input_size) / static_cast<double>(chunk0_size);
           f.d() << "Number of sampling jump points = " << nchunks
                 << " because the first chunk was "
-                << dt::log::ff(1, 1, 1.0 * input_size / chunk0_size)
-                << "times smaller than the entire file";
+                << dt::log::ff(1, 1, r) << "times smaller than the entire file";
         }
       }
     }
@@ -495,7 +495,8 @@ int64_t FreadReader::parse_single_line(dt::read::ParseContext& fctx)
     fctx.skip_whitespace();
 
     const char* fieldStart = tch;
-    auto ptype_iter = col.get_ptype_iterator(&fctx.quoteRule);
+    auto ptype_iter = dt::read::PtypeIterator(
+                          col.get_ptype(), col.get_rtype(), &fctx.quoteRule);
     while (true) {
       // Try to parse using the regular field parser
       tch = fieldStart;
@@ -532,6 +533,7 @@ int64_t FreadReader::parse_single_line(dt::read::ParseContext& fctx)
     }
     if (j < ncols && ptype_iter.has_incremented()) {
       col.set_ptype(*ptype_iter);
+      col.outcol().set_stype(col.get_stype());
     }
     j++;
 
@@ -639,12 +641,14 @@ void FreadReader::detect_column_types()
     allocnrow = 0;
     meanLineLen = sumLen;
   } else {
-    size_t bytesRead = static_cast<size_t>(eof - sof);
-    meanLineLen = std::max(sumLen/n_sample_lines, 1.0);
+    double bytesRead = static_cast<double>(eof - sof);
+    double nlines = static_cast<double>(n_sample_lines);
+    meanLineLen = std::max(sumLen/nlines, 1.0);
     size_t estnrow = static_cast<size_t>(std::ceil(bytesRead/meanLineLen));
-    double sd = std::sqrt( (sumLenSq - (sumLen*sumLen)/n_sample_lines)/(n_sample_lines-1) );
-    allocnrow = std::max(static_cast<size_t>(bytesRead / fmax(meanLineLen - 2*sd, minLen)),
-                         static_cast<size_t>(1.1*estnrow));
+    double sd = std::sqrt( (sumLenSq - (sumLen*sumLen)/nlines)/(nlines-1) );
+    allocnrow = std::max(static_cast<size_t>(bytesRead / std::max(meanLineLen - 2*sd,
+                                                                  static_cast<double>(minLen))),
+                         static_cast<size_t>(1.1 * static_cast<double>(estnrow)));
     allocnrow = std::min(allocnrow, 2*estnrow);
     // sd can be very close to 0.0 sometimes, so apply a +10% minimum
     // blank lines have length 1 so for fill=true apply a +100% maximum. It'll be grown if needed.
@@ -949,7 +953,6 @@ FreadObserver::FreadObserver(const dt::read::GenericReader& g_) : g(g_) {
   t_column_types_detected = 0;
   t_frame_allocated = 0;
   t_data_read = 0;
-  t_data_reread = 0;
   time_read_data = 0.0;
   time_push_data = 0.0;
   input_size = 0;
@@ -958,7 +961,6 @@ FreadObserver::FreadObserver(const dt::read::GenericReader& g_) : g(g_) {
   n_lines_sampled = 0;
   n_rows_allocated = 0;
   n_cols_allocated = 0;
-  n_cols_reread = 0;
   allocation_size = 0;
   read_data_nthreads = 0;
 }
@@ -974,8 +976,7 @@ void FreadObserver::report() {
           t_parse_parameters_detected <= t_column_types_detected &&
           t_column_types_detected <= t_frame_allocated &&
           t_frame_allocated <= t_data_read &&
-          t_data_read <= t_data_reread &&
-          t_data_reread <= t_end &&
+          t_data_read <= t_end &&
           read_data_nthreads > 0);
   double total_time = std::max(t_end - t_start + g.t_open_input, 1e-6);
   int    total_minutes = static_cast<int>(total_time/60);
@@ -984,11 +985,10 @@ void FreadObserver::report() {
   double types_time = t_column_types_detected - t_parse_parameters_detected;
   double alloc_time = t_frame_allocated - t_column_types_detected;
   double read_time = t_data_read - t_frame_allocated;
-  double reread_time = t_data_reread - t_data_read;
-  double makedt_time = t_end - t_data_reread;
-  double t_read = time_read_data.load() / read_data_nthreads;
-  double t_push = time_push_data.load() / read_data_nthreads;
-  double time_wait_data = read_time + reread_time - t_read - t_push;
+  double makedt_time = t_end - t_data_read;
+  double t_read = time_read_data.load() / static_cast<double>(read_data_nthreads);
+  double t_push = time_push_data.load() / static_cast<double>(read_data_nthreads);
+  double time_wait_data = read_time - t_read - t_push;
   int p = total_time < 10 ? 5 :
           total_time < 100 ? 6 :
           total_time < 1000 ? 7 : 8;
@@ -1016,17 +1016,11 @@ void FreadObserver::report() {
         << " x " << humanize_number(n_cols_allocated) << "] frame ("
         << filesize_to_str(allocation_size) << ") of which "
         << humanize_number(n_rows_read) << " ("
-        << ff(3, 0, 100.0 * n_rows_read / n_rows_allocated)
+        << ff(3, 0, 100.0 * static_cast<double>(n_rows_read) / static_cast<double>(n_rows_allocated))
         << "%) rows used";
   g.d() << " + " << ff(p, 3, read_time) << "s ("
         << ff(2, 0, 100 * read_time / total_time) << "%)"
         << " reading data";
-  if (n_cols_reread) {
-    g.d() << " + " << ff(p, 3, reread_time) << "s ("
-          << ff(2, 0, 100 * reread_time / total_time) << "%)"
-          << " re-reading " << n_cols_reread
-          << " columns due to out-of-sample type exceptions";
-  }
   g.d() << "    = " << ff(p, 3, t_read) << "s (" << ff(2, 0, 100 * t_read / total_time) << "%) reading into row-major buffers";
   g.d() << "    = " << ff(p, 3, t_push) << "s (" << ff(2, 0, 100 * t_push / total_time) << "%) saving into the output frame";
   g.d() << "    = " << ff(p, 3, time_wait_data) << "s (" << ff(2, 0, 100 * time_wait_data / total_time) << "%) waiting";
